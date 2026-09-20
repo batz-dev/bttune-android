@@ -919,7 +919,14 @@ private fun SpotifyLocalRow(items: List<Song>, playerConnection: com.bt.bttune.p
                 title = song.song.title,
                 subtitle = song.artists.joinToString { it.name },
                 thumbnail = song.song.thumbnailUrl,
-                onClick = { playerConnection.playQueue(YouTubeQueue.radio(song.toMediaMetadata())) },
+                onClick = {
+                    playerConnection.playQueue(
+                        YouTubeQueue(
+                            WatchEndpoint(videoId = song.song.id),
+                            song.toMediaMetadata()
+                        )
+                    )
+                },
             )
         }
     }
@@ -940,7 +947,7 @@ private fun SpotifyYtRow(items: List<YTItem>, navController: NavController, play
                 thumbnail = item.thumbnail,
                 onClick = {
                     when (item) {
-                        is SongItem -> playerConnection.playQueue(YouTubeQueue(item.endpoint ?: WatchEndpoint(videoId = item.id)))
+                        is SongItem -> playerConnection.playQueue(YouTubeQueue(item.endpoint ?: WatchEndpoint(videoId = item.id), item.toMediaMetadata()))
                         is AlbumItem -> navController.navigate("album/${item.browseId}")
                         is PlaylistItem -> navController.navigate("online_playlist/${item.id}")
                         is ArtistItem -> navController.navigate("artist/${item.id}")

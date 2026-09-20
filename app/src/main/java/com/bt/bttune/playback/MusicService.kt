@@ -43,6 +43,7 @@ import androidx.media3.datasource.cache.CacheDataSource
 import androidx.media3.datasource.cache.CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR
 import androidx.media3.datasource.cache.SimpleCache
 import androidx.media3.datasource.okhttp.OkHttpDataSource
+import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.analytics.AnalyticsListener
@@ -303,6 +304,17 @@ class MusicService :
                 .Builder(this)
                 .setMediaSourceFactory(createMediaSourceFactory())
                 .setRenderersFactory(createRenderersFactory())
+                .setLoadControl(
+                    DefaultLoadControl.Builder()
+                        .setBufferDurationsMs(
+                            16 * 1024,   // minBufferMs - 16s (reduced from default 50s)
+                            32 * 1024,   // maxBufferMs - 32s (reduced from default 50s)
+                            1024,        // bufferForPlaybackMs - 1s (reduced from default 2.5s)
+                            2048         // bufferForPlaybackAfterRebufferMs - 2s (reduced from default 5s)
+                        )
+                        .setPrioritizeTimeOverSizeThresholds(true)
+                        .build()
+                )
                 .setHandleAudioBecomingNoisy(true)
                 .setWakeMode(C.WAKE_MODE_NETWORK)
                 .setAudioAttributes(
@@ -711,7 +723,19 @@ class MusicService :
     }
 
     private fun stopOnError() {
-        player.pause()
+        // Instead of pausing (which kills autoplay), retry preparing the player.
+        // If the stream URL was resolved via fallback during the error, this will
+        // allow playback to start automatically without user pressing play.
+        if (player.playWhenReady) {
+            scope.launch {
+                delay(1000)
+                if (player.playbackState == Player.STATE_IDLE || player.playerError != null) {
+                    player.prepare()
+                }
+            }
+        } else {
+            player.pause()
+        }
     }
 
     private fun updateNotification() {
@@ -1455,6 +1479,18 @@ class MusicService :
         if (!isNetworkConnected.value || isConnectionError) {
             waitOnNetworkError()
             return
+        }
+
+        // For source errors (stream URL issues), retry with prepare() to trigger
+        // the ResolvingDataSource to re-resolve the URL via fallback clients
+        if (error.errorCode == PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS ||
+            error.errorCode == PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT ||
+            error.errorCode == PlaybackException.ERROR_CODE_IO_UNSPECIFIED ||
+            error.errorCode == PlaybackException.ERROR_CODE_REMOTE_ERROR) {
+            val mediaId = player.currentMediaItem?.mediaId
+            if (mediaId != null) {
+                YTPlayerUtils.invalidateCachedStreamUrls(mediaId)
+            }
         }
 
         if (dataStore.get(AutoSkipNextOnErrorKey, false)) {

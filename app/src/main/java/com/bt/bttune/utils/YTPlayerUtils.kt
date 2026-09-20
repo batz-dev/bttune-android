@@ -63,6 +63,8 @@ object YTPlayerUtils {
         }
         val client = OkHttpClient.Builder()
             .proxy(current)
+            .connectTimeout(3, java.util.concurrent.TimeUnit.SECONDS)
+            .readTimeout(3, java.util.concurrent.TimeUnit.SECONDS)
             .build()
         streamClientPair = current to client
         return client
@@ -82,22 +84,22 @@ object YTPlayerUtils {
      */
     private val STREAM_FALLBACK_CLIENTS: Array<YouTubeClient> = arrayOf(
         IOS,
-        MOBILE,
-        ANDROID_MUSIC,
         IOS_MUSIC,
-        ANDROID_VR_NO_AUTH,
+        ANDROID_MUSIC,
+        MOBILE,
         ANDROID_VR_1_61_48,
         ANDROID_VR_1_43_32,
+        ANDROID_VR_NO_AUTH,
+        IPADOS,
+        VISIONOS,
+        WEB_REMIX,
+        WEB,
+        TVHTML5,
+        TVHTML5_SIMPLY_EMBEDDED_PLAYER,
         ANDROID_CREATOR,
         ANDROID_TESTSUITE,
         ANDROID_UNPLUGGED,
-        IPADOS,
-        VISIONOS,
-        TVHTML5,
-        TVHTML5_SIMPLY_EMBEDDED_PLAYER,
-        WEB,
         WEB_CREATOR,
-        WEB_REMIX
     )
     private data class CachedStreamUrl(
         val url: String,
@@ -255,7 +257,7 @@ object YTPlayerUtils {
         val botDetectedClients = mutableSetOf<String>()
         var gateFailure: PlaybackGateFailure? = null
 
-        for ((index, client) in streamClients.withIndex()) {
+        for ((index, client) in streamClients.take(6).withIndex()) {
             format = null
             streamUrl = null
             streamExpiresInSeconds = null
