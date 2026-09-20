@@ -708,7 +708,7 @@ fun EnhancedRichPresence(
                         onClick = {
                             val intent = Intent(
                                 Intent.ACTION_VIEW,
-                                "https://github.com/scaaa747-prog/bttune".toUri()
+                                "https://github.com/batz-dev/bttune-android".toUri()
                             )
                             context.startActivity(intent)
                         },

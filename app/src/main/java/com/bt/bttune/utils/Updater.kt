@@ -13,7 +13,7 @@ object Updater {
     suspend fun getLatestVersionName(): Result<String> =
         runCatching {
             val response =
-                client.get("https://api.github.com/repos/scaaa747-prog/bttune/releases/latest")
+                client.get("https://api.github.com/repos/batz-dev/bttune-android/releases/latest")
                     .bodyAsText()
             val json = JSONObject(response)
             val versionName = json.optString("tag_name", json.optString("name", ""))

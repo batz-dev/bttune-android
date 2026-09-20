@@ -460,7 +460,7 @@ fun VersionCard(uriHandler: UriHandler) {
                                 )
                             }
                         },
-                        onClick = { uriHandler.openUri("https://github.com/scaaa747-prog/bttune/releases/latest") }
+                        onClick = { uriHandler.openUri("https://github.com/batz-dev/bttune-android/releases/latest") }
                     ),
                     isLast = true
                 )
@@ -628,7 +628,7 @@ fun UpdateDownloadDialog(
                                 onClick = {
                                     downloadStatus = DownloadStatus.REDIRECTING
                                     val cleanTag = if (latestVersion.startsWith("v")) latestVersion else "v$latestVersion"
-                                    val downloadUrl = "https://github.com/scaaa747-prog/bttune/releases/download/$cleanTag/BTTUNE-release.apk"
+                                    val downloadUrl = "https://github.com/batz-dev/bttune-android/releases/download/$cleanTag/BTTUNE-release.apk"
                                     uriHandler.openUri(downloadUrl)
                                     downloadStatus = DownloadStatus.COMPLETED
                                     onDismiss()
@@ -702,7 +702,7 @@ enum class DownloadStatus {
 
 suspend fun checkForUpdates(): String? = withContext(Dispatchers.IO) {
     try {
-        val url = URL("https://api.github.com/repos/scaaa747-prog/bttune/releases/latest")
+        val url = URL("https://api.github.com/repos/batz-dev/bttune-android/releases/latest")
         val connection = url.openConnection()
         connection.connect()
         val json = connection.getInputStream().bufferedReader().use { it.readText() }

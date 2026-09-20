@@ -165,7 +165,7 @@ fun ChangelogScreen(viewModel: ChangelogViewModel = viewModel()) {
     var selectedTab by remember { mutableStateOf(ChangelogTab.RELEASES) }
 
     LaunchedEffect(Unit) {
-        viewModel.loadChangelog("scaaa747-prog", "bttune")
+        viewModel.loadChangelog("batz-dev", "bttune-android")
     }
 
     Column(
@@ -194,7 +194,7 @@ fun ChangelogScreen(viewModel: ChangelogViewModel = viewModel()) {
                     isLoading = uiState.isLoadingReleases,
                     error = uiState.releasesError,
                     lastUpdated = uiState.lastUpdated,
-                    onRetry = { viewModel.loadChangelog("scaaa747-prog", "bttune") }
+                    onRetry = { viewModel.loadChangelog("batz-dev", "bttune-android") }
                 )
             }
 
@@ -204,7 +204,7 @@ fun ChangelogScreen(viewModel: ChangelogViewModel = viewModel()) {
                     isLoading = uiState.isLoadingCommits,
                     error = uiState.commitsError,
                     lastUpdated = uiState.lastUpdated,
-                    onRetry = { viewModel.loadChangelog("scaaa747-prog", "bttune") }
+                    onRetry = { viewModel.loadChangelog("batz-dev", "bttune-android") }
                 )
             }
         }
