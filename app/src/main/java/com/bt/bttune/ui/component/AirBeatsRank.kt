@@ -6,7 +6,7 @@ package com.bt.bttune.ui.component
  * Each rank has an associated threshold in hours; the user attains the rank
  * when their total listening time meets or exceeds that threshold.
  */
-enum class BTTUNERank(val thresholdHours: Int) {
+enum class AirBeatsRank(val thresholdHours: Int) {
     Echo(1),
     Pulse(5),
     Bronze(10),
@@ -30,7 +30,7 @@ enum class BTTUNERank(val thresholdHours: Int) {
         /**
          * Returns the highest rank for which the given total listening hours meet the threshold.
          */
-        fun fromHours(hours: Int): BTTUNERank {
+        fun fromHours(hours: Int): AirBeatsRank {
             return values().lastOrNull { it.thresholdHours <= hours } ?: Echo
         }
     }

@@ -1,5 +1,5 @@
 /*
- * OpenTune Project Original (2026)
+ * AirBeats Project (2026)
  * Arturo254 (github.com/Arturo254)
  * Licensed Under GPL-3.0 | see git history for contributors
  */
@@ -32,6 +32,7 @@ import com.bt.bttune.innertube.models.YouTubeClient.Companion.TVHTML5
 import com.bt.bttune.innertube.models.YouTubeClient.Companion.VISIONOS
 import com.bt.bttune.innertube.models.YouTubeClient.Companion.WEB
 import com.bt.bttune.innertube.models.YouTubeClient.Companion.WEB_CREATOR
+import kotlinx.coroutines.delay
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.OkHttpClient
 import timber.log.Timber
@@ -81,18 +82,18 @@ object YTPlayerUtils {
      * Clients used for fallback streams in case the streams of the main client do not work.
      */
     private val STREAM_FALLBACK_CLIENTS: Array<YouTubeClient> = arrayOf(
+        VISIONOS,
         IOS,
-        MOBILE,
-        ANDROID_MUSIC,
         IOS_MUSIC,
+        IPADOS,
         ANDROID_VR_NO_AUTH,
         ANDROID_VR_1_61_48,
         ANDROID_VR_1_43_32,
+        ANDROID_MUSIC,
         ANDROID_CREATOR,
         ANDROID_TESTSUITE,
         ANDROID_UNPLUGGED,
-        IPADOS,
-        VISIONOS,
+        MOBILE,
         TVHTML5,
         TVHTML5_SIMPLY_EMBEDDED_PLAYER,
         WEB,
@@ -170,28 +171,33 @@ object YTPlayerUtils {
         networkMetered: Boolean? = null,
         avoidCodecs: Set<String> = emptySet(),
     ): Result<PlaybackData> = runCatching {
-        val attempts =
+        val qualityAttempts =
             when (audioQuality) {
-                
                 AudioQuality.AUTO -> listOf(AudioQuality.AUTO, AudioQuality.HIGH)
                 else -> listOf(audioQuality)
             }.distinct()
 
         var lastError: Throwable? = null
-        for (attempt in attempts) {
-            val attemptResult =
-                runCatching {
-                    playerResponseForPlaybackOnce(
-                        videoId = videoId,
-                        playlistId = playlistId,
-                        audioQuality = attempt,
-                        connectivityManager = connectivityManager,
-                        networkMetered = networkMetered,
-                        avoidCodecs = avoidCodecs,
-                    )
-                }
-            if (attemptResult.isSuccess) return@runCatching attemptResult.getOrThrow()
-            lastError = attemptResult.exceptionOrNull()
+        for (quality in qualityAttempts) {
+            // Retry once per quality: a burst of requests (e.g. downloading a whole album)
+            // can transiently exhaust the client fallback chain, which is otherwise
+            // indistinguishable from a real failure.
+            repeat(3) { retry ->
+                if (retry > 0) delay(1200L)
+                val attemptResult =
+                    runCatching {
+                        playerResponseForPlaybackOnce(
+                            videoId = videoId,
+                            playlistId = playlistId,
+                            audioQuality = quality,
+                            connectivityManager = connectivityManager,
+                            networkMetered = networkMetered,
+                            avoidCodecs = avoidCodecs,
+                        )
+                    }
+                if (attemptResult.isSuccess) return@runCatching attemptResult.getOrThrow()
+                lastError = attemptResult.exceptionOrNull()
+            }
         }
         throw lastError ?: IllegalStateException("Failed to resolve stream")
     }
@@ -217,23 +223,27 @@ object YTPlayerUtils {
         var streamExpiresInSeconds: Int? = null
         var streamPlayerResponse: PlayerResponse? = null
 
+        val preferredYouTubeClient = VISIONOS
+
         val orderedFallbackClients =
             (
+                listOf(VISIONOS, IOS, IPADOS, ANDROID_TESTSUITE, ANDROID_VR_NO_AUTH) +
                 if (isLoggedIn) {
                     STREAM_FALLBACK_CLIENTS.filter { it.loginSupported } + STREAM_FALLBACK_CLIENTS.filterNot { it.loginSupported }
                 } else {
                     STREAM_FALLBACK_CLIENTS.toList()
                 }
-                ).distinct()
-
-        val preferredYouTubeClient = ANDROID_VR_NO_AUTH
+            ).distinct()
 
         val metadataClient =
             preferredYouTubeClient
 
         Timber.tag(logTag).i("Fetching metadata response using client: ${metadataClient.clientName}")
         val metadataPlayerResponse =
-            YouTube.player(videoId, playlistId, metadataClient, signatureTimestamp).getOrThrow()
+            YouTube.player(videoId, playlistId, preferredYouTubeClient, signatureTimestamp).getOrNull()
+                ?: YouTube.player(videoId, playlistId, IOS, signatureTimestamp).getOrNull()
+                ?: YouTube.player(videoId, playlistId, ANDROID_VR_NO_AUTH, signatureTimestamp).getOrNull()
+                ?: YouTube.player(videoId, playlistId, MAIN_CLIENT, signatureTimestamp).getOrThrow()
         val audioConfig = metadataPlayerResponse.playerConfig?.audioConfig
         val videoDetails = metadataPlayerResponse.videoDetails
         val playbackTracking = metadataPlayerResponse.playbackTracking
@@ -485,12 +495,7 @@ object YTPlayerUtils {
                 else -> audioQuality
             }
 
-        val targetBitrateBps =
-            when (effectiveQuality) {
-                AudioQuality.LOW -> 70_000
-                AudioQuality.HIGH -> 160_000
-                AudioQuality.AUTO -> null
-            }
+        val targetBitrateBps = targetBitrateBps(effectiveQuality)
 
         val preferHigher =
             compareByDescending<PlayerResponse.StreamingData.Format> { it.url != null }
@@ -531,6 +536,20 @@ object YTPlayerUtils {
 
         return candidates
     }
+
+    /** Target bitrate (bps) for a given quality preset, shared by download/export quality matching. */
+    internal fun targetBitrateBps(quality: AudioQuality): Int? =
+        when (quality) {
+            AudioQuality.LOW -> 70_000
+            AudioQuality.MEDIUM -> 128_000
+            AudioQuality.HIGH -> 160_000
+            AudioQuality.AUTO -> null
+        }
+
+    /** Buckets an actual stream bitrate (bps) into the closest quality preset. */
+    internal fun nearestQuality(bitrateBps: Int): AudioQuality =
+        listOf(AudioQuality.LOW, AudioQuality.MEDIUM, AudioQuality.HIGH)
+            .minBy { quality -> kotlin.math.abs(targetBitrateBps(quality)!! - bitrateBps) }
 
     private fun extractCodec(mimeType: String): String? {
         val match = Regex("""codecs="([^"]+)"""").find(mimeType) ?: return null

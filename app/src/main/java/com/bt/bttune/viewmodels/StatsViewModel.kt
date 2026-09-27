@@ -10,11 +10,12 @@ import com.bt.bttune.ui.component.AvatarPreferenceManager
 import com.bt.bttune.ui.component.AvatarSelection
 import com.bt.bttune.ui.component.NamePreferenceManager
 import com.bt.bttune.ui.screens.OptionStats
-import com.bt.bttune.utils.BTTUNEStatsCloudClient
-import com.bt.bttune.utils.BTTUNEStatsCloudSync
+import com.bt.bttune.utils.AirBeatsStatsCloudClient
+import com.bt.bttune.utils.AirBeatsStatsCloudSync
 import com.bt.bttune.utils.GlobalStatsBoard
 import com.bt.bttune.utils.LocalStatsUpload
 import com.bt.bttune.utils.reportException
+import timber.log.Timber
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -34,16 +35,20 @@ import java.time.LocalDateTime
 import java.time.ZoneOffset
 import java.time.temporal.WeekFields
 import java.util.Locale
-import javax.inject.Inject
-
+import com.bt.bttune.data.repository.NowPlayingTrack
+import com.bt.bttune.data.repository.ScrobbleRepository
+import com.bt.bttune.db.entities.EventWithSong
 import kotlinx.coroutines.flow.Flow
-import com.bt.bttune.ui.component.BTTUNERank
+import kotlinx.coroutines.flow.StateFlow
+import com.bt.bttune.ui.component.AirBeatsRank
+import javax.inject.Inject
 
 data class GlobalStatsUiState(
     val isLoading: Boolean = true,
     val board: GlobalStatsBoard = GlobalStatsBoard(),
     val error: String? = null,
     val currentUserId: String = "",
+    val currentUserName: String = "",
 )
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -54,10 +59,17 @@ constructor(
     val database: MusicDatabase,
     @ApplicationContext private val context: Context,
     private val namePreferenceManager: NamePreferenceManager,
+    private val scrobbleRepository: ScrobbleRepository,
 ) : ViewModel() {
     val selectedOption = MutableStateFlow(OptionStats.CONTINUOUS)
     val indexChips = MutableStateFlow(0)
     val globalStats = MutableStateFlow(GlobalStatsUiState())
+
+    val nowPlayingTrack: StateFlow<NowPlayingTrack?> = scrobbleRepository.nowPlaying
+
+    val recentEvents: StateFlow<List<EventWithSong>> = database.events()
+        .map { it.take(25) }
+        .stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
 
     val totalListenHours: Flow<Double> = database.mostPlayedSongsStats(0L, limit = -1, toTimeStamp = Long.MAX_VALUE)
         .map { songs ->
@@ -65,13 +77,13 @@ constructor(
             totalMs.toDouble() / (3600.0 * 1000.0)
         }
 
-    val currentRank: Flow<BTTUNERank?> = totalListenHours.map { hours ->
-        if (hours >= 1.0) BTTUNERank.fromHours(hours.toInt()) else null
+    val currentRank: Flow<AirBeatsRank?> = totalListenHours.map { hours ->
+        if (hours >= 1.0) AirBeatsRank.fromHours(hours.toInt()) else null
     }
 
-    private val cloudClient = BTTUNEStatsCloudClient()
+    private val cloudClient = AirBeatsStatsCloudClient()
     private val statsPreferences =
-        context.getSharedPreferences("bttune_global_stats", Context.MODE_PRIVATE)
+        context.getSharedPreferences("airbeats_global_stats", Context.MODE_PRIVATE)
 
     val mostPlayedSongsStats =
         combine(
@@ -85,11 +97,7 @@ constructor(
                         limit = -1,
                         toTimeStamp =
                             if (selection == OptionStats.CONTINUOUS || t == 0) {
-                                LocalDateTime
-                                    .now()
-                                    .toInstant(
-                                        ZoneOffset.UTC,
-                                    ).toEpochMilli()
+                                Long.MAX_VALUE
                             } else {
                                 statToPeriod(selection, t - 1)
                             },
@@ -108,11 +116,7 @@ constructor(
                         limit = -1,
                         toTimeStamp =
                             if (selection == OptionStats.CONTINUOUS || t == 0) {
-                                LocalDateTime
-                                    .now()
-                                    .toInstant(
-                                        ZoneOffset.UTC,
-                                    ).toEpochMilli()
+                                Long.MAX_VALUE
                             } else {
                                 statToPeriod(selection, t - 1)
                             },
@@ -131,16 +135,12 @@ constructor(
                         limit = -1,
                         toTimeStamp =
                             if (selection == OptionStats.CONTINUOUS || t == 0) {
-                                LocalDateTime
-                                    .now()
-                                    .toInstant(
-                                        ZoneOffset.UTC,
-                                    ).toEpochMilli()
+                                Long.MAX_VALUE
                             } else {
                                 statToPeriod(selection, t - 1)
                             },
                     ).map { artists ->
-                        artists.filter { it.artist.isYouTubeArtist }
+                        artists.filter { it.artist.isYouTubeArtist || it.artist.isLocalArtist || it.artist.isScrobbleArtist }
                     }
             }.stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
 
@@ -155,11 +155,7 @@ constructor(
                     limit = -1,
                     toTimeStamp =
                         if (selection == OptionStats.CONTINUOUS || t == 0) {
-                            LocalDateTime
-                                .now()
-                                .toInstant(
-                                    ZoneOffset.UTC,
-                                ).toEpochMilli()
+                            Long.MAX_VALUE
                         } else {
                             statToPeriod(selection, t - 1)
                         },
@@ -180,10 +176,10 @@ constructor(
                 artists
                     .map { it.artist }
                     .filter {
-                        it.thumbnailUrl == null || Duration.between(
+                        it.isYouTubeArtist && (it.thumbnailUrl == null || Duration.between(
                             it.lastUpdateTime,
                             LocalDateTime.now()
-                        ) > Duration.ofDays(10)
+                        ) > Duration.ofDays(10))
                     }.forEach { artist ->
                         YouTube.artist(artist.id).onSuccess { artistPage ->
                             database.query {
@@ -197,7 +193,7 @@ constructor(
             mostPlayedAlbums.collect { albums ->
                 albums
                     .filter {
-                        it.album.songCount == 0
+                        (it.album.id.startsWith("MPREb_") || it.album.id.startsWith("OLAK5uy_")) && it.album.songCount == 0
                     }.forEach { album ->
                         YouTube
                             .album(album.id)
@@ -232,49 +228,79 @@ constructor(
     }
 
     private suspend fun syncAndLoadGlobalStats(forceUpload: Boolean = false) {
-        globalStats.value = globalStats.value.copy(isLoading = true, error = null)
-        val userId = BTTUNEStatsCloudSync.resolveStableUserId(context, namePreferenceManager, statsPreferences)
-        if (forceUpload || shouldUploadToday()) {
+        val currentName = runCatching { namePreferenceManager.userName.first().trim() }.getOrDefault("")
+        globalStats.value = globalStats.value.copy(isLoading = true, error = null, currentUserName = currentName)
+        val userId = AirBeatsStatsCloudSync.resolveStableUserId(context, namePreferenceManager, statsPreferences)
+
+        var mustUpdateGlobalStats = forceUpload || shouldUploadToday()
+
+        // Read leaderboard first to check if cloud has recorded higher or different listen time than local DB
+        val boardResult = cloudClient.readBoard()
+        val initialBoard = boardResult.getOrNull()
+        if (initialBoard != null) {
+            val userNumber = AirBeatsStatsCloudSync.getUserNumber(context)
+            val matchedUser = initialBoard.users.firstOrNull { it.id == userId }
+                ?: (if (currentName.isNotBlank() && !currentName.equals("AirBeats User", ignoreCase = true))
+                    initialBoard.users.firstOrNull { it.name.trim().equals(currentName, ignoreCase = true) }
+                else null)
+                ?: (if (!userNumber.isNullOrBlank())
+                    initialBoard.users.firstOrNull { it.user == userNumber }
+                else null)
+
+            // If global stats is greater than the app's local stats (e.g. user restored an older backup),
+            // update global stats according to the app so the app is the authoritative source
+            if (matchedUser != null) {
+                val currentLocalTime = buildUpload(userId)?.totalListenMs ?: 0L
+                if (matchedUser.totalListenMs > currentLocalTime) {
+                    mustUpdateGlobalStats = true
+                }
+            }
+        }
+
+        if (mustUpdateGlobalStats) {
             buildUpload(userId)?.let { upload ->
                 cloudClient
                     .uploadDaily(upload)
                     .onSuccess { board ->
                         statsPreferences.edit().putString(KEY_LAST_UPLOAD_DAY, LocalDate.now().toString()).apply()
+                        val userNumber = AirBeatsStatsCloudSync.getUserNumber(context)
+                        val updatedUserNumber = board.userNumber ?: board.users.firstOrNull { it.id == userId }?.user
+                        if (!updatedUserNumber.isNullOrBlank()) {
+                            AirBeatsStatsCloudSync.persistUserNumber(context, updatedUserNumber)
+                        }
                         globalStats.value =
                             GlobalStatsUiState(
                                 isLoading = false,
                                 board = board,
                                 currentUserId = userId,
+                                currentUserName = currentName,
+                                error = null,
                             )
-                    }.onFailure { error ->
-                        globalStats.value =
-                            globalStats.value.copy(
-                                isLoading = false,
-                                error = error.message,
-                                currentUserId = userId,
-                            )
+                        return
+                    }.onFailure { uploadError ->
+                        Timber.d("StatsViewModel: Daily upload error/throttled: ${uploadError.message}")
                     }
-                return
             }
         }
 
-        cloudClient
-            .readBoard()
-            .onSuccess { board ->
-                globalStats.value =
-                    GlobalStatsUiState(
-                        isLoading = false,
-                        board = board,
-                        currentUserId = userId,
-                    )
-            }.onFailure { error ->
-                globalStats.value =
-                    globalStats.value.copy(
-                        isLoading = false,
-                        error = error.message,
-                        currentUserId = userId,
-                    )
-            }
+        if (initialBoard != null) {
+            globalStats.value =
+                GlobalStatsUiState(
+                    isLoading = false,
+                    board = initialBoard,
+                    currentUserId = userId,
+                    currentUserName = currentName,
+                )
+        } else {
+            val error = boardResult.exceptionOrNull()
+            globalStats.value =
+                globalStats.value.copy(
+                    isLoading = false,
+                    error = error?.message,
+                    currentUserId = userId,
+                    currentUserName = currentName,
+                )
+        }
     }
 
     private suspend fun buildUpload(userId: String): LocalStatsUpload? {
@@ -289,11 +315,11 @@ constructor(
                 .atStartOfDay()
                 .toInstant(ZoneOffset.UTC)
                 .toEpochMilli()
-        val allSongs = database.mostPlayedSongsStats(0L, limit = -1, toTimeStamp = now).first()
-        val weekSongs = database.mostPlayedSongsStats(weekStart, limit = -1, toTimeStamp = now).first()
+        val allSongs = database.mostPlayedSongsStats(0L, limit = -1, toTimeStamp = Long.MAX_VALUE).first()
+        val weekSongs = database.mostPlayedSongsStats(weekStart, limit = -1, toTimeStamp = Long.MAX_VALUE).first()
         val totalListenMs = allSongs.sumOf { it.timeListened?.toLong() ?: 0L }
         val weeklyListenMs = weekSongs.sumOf { it.timeListened?.toLong() ?: 0L }
-        val name = namePreferenceManager.userName.first().ifBlank { android.os.Build.MODEL ?: "BTTUNE User" }
+        val name = namePreferenceManager.userName.first().ifBlank { android.os.Build.MODEL ?: "AirBeats User" }
         val email = namePreferenceManager.accountEmail.first().trim().lowercase().takeIf { it.isNotBlank() }
         val profileUrl =
             when (val avatar = AvatarPreferenceManager(context).getAvatarSelection.first()) {
@@ -325,6 +351,7 @@ constructor(
 
         return LocalStatsUpload(
             userId = userId,
+            user = AirBeatsStatsCloudSync.getUserNumber(context),
             name = name,
             profileUrl = profileUrl,
             email = email,

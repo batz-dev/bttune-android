@@ -1,6 +1,5 @@
 /*
- * OpenTune Project Original (2026)
- * Arturo254 (github.com/Arturo254)
+ * AirBeats Project Original (2026)
  * Licensed Under GPL-3.0 | see git history for contributors
  */
 
@@ -14,42 +13,42 @@ import kotlinx.serialization.Serializable
 
 @Serializable
 data class AccountMenuResponse(
-    val actions: List<Action>,
+    val actions: List<Action>? = null,
 ) {
     @Serializable
     data class Action(
-        val openPopupAction: OpenPopupAction,
+        val openPopupAction: OpenPopupAction? = null,
     ) {
         @Serializable
         data class OpenPopupAction(
-            val popup: Popup,
+            val popup: Popup? = null,
         ) {
             @Serializable
             data class Popup(
-                val multiPageMenuRenderer: MultiPageMenuRenderer,
+                val multiPageMenuRenderer: MultiPageMenuRenderer? = null,
             ) {
                 @Serializable
                 data class MultiPageMenuRenderer(
-                    val header: Header?,
+                    val header: Header? = null,
                 ) {
                     @Serializable
                     data class Header(
-                        val activeAccountHeaderRenderer: ActiveAccountHeaderRenderer,
+                        val activeAccountHeaderRenderer: ActiveAccountHeaderRenderer? = null,
                     ) {
                         @Serializable
                         data class ActiveAccountHeaderRenderer(
-                            val accountName: Runs,
-                            val email: Runs?,
-                            val channelHandle: Runs?,
-                            val accountPhoto: Thumbnails,
+                            val accountName: Runs? = null,
+                            val email: Runs? = null,
+                            val channelHandle: Runs? = null,
+                            val accountPhoto: Thumbnails? = null,
                         ) {
                             fun toAccountInfo(): AccountInfo? {
-                                val name = accountName.runs?.firstOrNull()?.text ?: return null
+                                val name = accountName?.runs?.firstOrNull()?.text ?: return null
                                 return AccountInfo(
                                     name = name,
                                     email = email?.runs?.firstOrNull()?.text,
                                     channelHandle = channelHandle?.runs?.firstOrNull()?.text,
-                                    thumbnailUrl = accountPhoto.thumbnails.lastOrNull()?.normalizedUrl,
+                                    thumbnailUrl = accountPhoto?.thumbnails?.lastOrNull()?.normalizedUrl,
                                 )
                             }
                         }

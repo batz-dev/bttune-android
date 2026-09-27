@@ -1,7 +1,7 @@
 @file:OptIn(ExperimentalMaterial3ExpressiveApi::class)
 
 /*
- * BTTUNE Project Original (2026)
+ * AirBeats Project Original (2026)
  * Licensed Under GPL-3.0 | see git history for contributors
  */
 
@@ -191,7 +191,6 @@ private data class AodMediaState(
     val artist: String,
 )
 
-@RequiresApi(Build.VERSION_CODES.R)
 @Composable
 fun AlwaysOnDisplayScreen(navController: NavController) {
     val playerConnection = LocalPlayerConnection.current ?: run {

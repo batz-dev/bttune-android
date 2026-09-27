@@ -1,5 +1,5 @@
 /*
- * BTTUNE Project Original (2026)
+ * AirBeats Project Original (2026)
  * Licensed Under GPL-3.0 | see git history for contributors
  */
 
@@ -100,20 +100,31 @@ import com.bt.bttune.constants.LyricsTextSizeKey
 import com.bt.bttune.constants.PlayerBackgroundStyle
 import com.bt.bttune.constants.PlayerBackgroundStyleKey
 import com.bt.bttune.constants.UseSystemFontKey
+import com.bt.bttune.constants.AiProviderKey
+import com.bt.bttune.constants.AutoTranslateKey
+import com.bt.bttune.constants.CustomPromptKey
+import com.bt.bttune.constants.DeeplApiKey
+import com.bt.bttune.constants.OpenRouterApiKey
+import com.bt.bttune.constants.OpenRouterBaseUrlKey
+import com.bt.bttune.constants.OpenRouterModelKey
+import com.bt.bttune.constants.ReplaceOriginalLyricsWithTranslationKey
+import com.bt.bttune.constants.TranslateLanguageKey
+import com.bt.bttune.constants.TranslateModeKey
+import com.bt.bttune.lyrics.LyricsTranslationHelper
 import com.bt.bttune.db.entities.LyricsEntity.Companion.LYRICS_NOT_FOUND
 import com.bt.bttune.lyrics.LyricsEntry
-import com.bt.bttune.lyrics.BTTUNELyricsUtils.findCurrentLineIndex
-import com.bt.bttune.lyrics.BTTUNELyricsUtils.isChinese
-import com.bt.bttune.lyrics.BTTUNELyricsUtils.isJapanese
-import com.bt.bttune.lyrics.BTTUNELyricsUtils.isKorean
-import com.bt.bttune.lyrics.BTTUNELyricsUtils.isTtml
-import com.bt.bttune.lyrics.BTTUNELyricsUtils.parseLyrics
-import com.bt.bttune.lyrics.BTTUNELyricsUtils.parseTtml
+import com.bt.bttune.lyrics.AirBeatsLyricsUtils.findCurrentLineIndex
+import com.bt.bttune.lyrics.AirBeatsLyricsUtils.isChinese
+import com.bt.bttune.lyrics.AirBeatsLyricsUtils.isJapanese
+import com.bt.bttune.lyrics.AirBeatsLyricsUtils.isKorean
+import com.bt.bttune.lyrics.AirBeatsLyricsUtils.isTtml
+import com.bt.bttune.lyrics.AirBeatsLyricsUtils.parseLyrics
+import com.bt.bttune.lyrics.AirBeatsLyricsUtils.parseTtml
 import com.bt.bttune.lyrics.WordTimestamp
 import com.bt.bttune.ui.component.shimmer.ShimmerHost
 import com.bt.bttune.ui.component.shimmer.TextPlaceholder
 import com.bt.bttune.ui.utils.smoothFadingEdge
-import com.bt.bttune.utils.BTTUNEComposeToImage
+import com.bt.bttune.utils.AirBeatsComposeToImage
 import com.bt.bttune.utils.rememberEnumPreference
 import com.bt.bttune.utils.rememberPreference
 import kotlinx.coroutines.Dispatchers
@@ -129,7 +140,7 @@ import kotlin.math.abs
 // ──────────────────────────────────────────────────────────────────────
 
 /** Lead time offset for LRC-style line-synced lyrics (ms). */
-private const val LRC_LEAD_MS = 300L
+private const val LRC_LEAD_MS = 0L
 
 /** Lead time offset for TTML word-synced lyrics (ms). */
 private const val TTML_LEAD_MS = 0L
@@ -180,11 +191,20 @@ fun LyricsV2(
     }
     val playerBackground by rememberEnumPreference(PlayerBackgroundStyleKey, PlayerBackgroundStyle.DEFAULT)
 
-    // ── Text colour derived from background style ──
-    val textColor = if (playerBackground == PlayerBackgroundStyle.DEFAULT)
-        MaterialTheme.colorScheme.onBackground
-    else
-        Color.White
+    val (targetLanguage) = rememberPreference(TranslateLanguageKey, defaultValue = "hi-Latn")
+    val (autoTranslate) = rememberPreference(AutoTranslateKey, defaultValue = false)
+    val (aiProvider) = rememberPreference(AiProviderKey, defaultValue = "OpenRouter")
+    val (openRouterApiKey) = rememberPreference(OpenRouterApiKey, defaultValue = "")
+    val (deeplApiKey) = rememberPreference(DeeplApiKey, defaultValue = "")
+    val (openRouterBaseUrl) = rememberPreference(OpenRouterBaseUrlKey, defaultValue = "https://openrouter.ai/api/v1/chat/completions")
+    val (openRouterModel) = rememberPreference(OpenRouterModelKey, defaultValue = "google/gemini-2.5-flash-lite")
+    val (translateMode) = rememberPreference(TranslateModeKey, defaultValue = "Literal")
+    val (customPrompt) = rememberPreference(CustomPromptKey, defaultValue = "")
+    val (replaceOriginalLyrics) = rememberPreference(ReplaceOriginalLyricsWithTranslationKey, defaultValue = false)
+    val translationVersion by LyricsTranslationHelper.translationVersion.collectAsState()
+
+    // ── Text colour: pure white in all themes ──
+    val textColor = Color.White
 
     val inactiveAlpha = 0.35f
 
@@ -244,73 +264,54 @@ fun LyricsV2(
                     entry.time + 5000L // 5s fallback for last line
                 }
                 val lineDurationMs = (nextEntryTime - entry.time).coerceAtLeast(500L)
-                val lineStartSec = entry.time / 1000.0
+                val words = synthesizeWordTimestamps(entry.text, entry.time, lineDurationMs)
+                if (words.isEmpty()) entry else entry.copy(words = words)
+            }
+        }
+    }
 
-                val isCjkText = isJapanese(entry.text) || isChinese(entry.text) || isKorean(entry.text)
-                val tokens = if (isCjkText) {
-                    val chars = mutableListOf<String>()
-                    var currentWord = StringBuilder()
-                    entry.text.forEach { char ->
-                        if (char.isWhitespace()) {
-                            if (currentWord.isNotEmpty()) {
-                                chars.add(currentWord.toString())
-                                currentWord.clear()
-                            }
-                            chars.add(char.toString())
-                        } else if (isJapanese(char.toString()) || isChinese(char.toString()) || isKorean(char.toString())) {
-                            if (currentWord.isNotEmpty()) {
-                                chars.add(currentWord.toString())
-                                currentWord.clear()
-                            }
-                            chars.add(char.toString())
-                        } else {
-                            currentWord.append(char)
-                        }
-                    }
-                    if (currentWord.isNotEmpty()) {
-                        chars.add(currentWord.toString())
-                    }
+    DisposableEffect(entriesWithWords) {
+        LyricsTranslationHelper.registerLyrics(entriesWithWords)
+        onDispose {
+            LyricsTranslationHelper.unregisterLyrics(entriesWithWords)
+        }
+    }
 
-                    // Group spaces onto the preceding word
-                    val groupedTokens = mutableListOf<String>()
-                    var tempStr = StringBuilder()
-                    chars.forEachIndexed { i, c ->
-                        if (c.isBlank()) {
-                            if (groupedTokens.isNotEmpty()) {
-                                groupedTokens[groupedTokens.lastIndex] = groupedTokens.last() + c
-                            }
-                        } else {
-                            groupedTokens.add(c)
-                        }
-                    }
-                    groupedTokens
-                } else {
-                    entry.text.split(Regex("\\s+"))
-                }
-                if (tokens.isEmpty()) return@mapIndexed entry
+    LaunchedEffect(mediaMetadata?.id) {
+        mediaMetadata?.id?.let { LyricsTranslationHelper.onSongChanged(it) }
+    }
 
-                // Weight each token by character count for proportional distribution
-                val totalChars = tokens.sumOf { it.length }.coerceAtLeast(1)
-                val words = mutableListOf<WordTimestamp>()
-                var currentOffsetMs = 0.0
+    // ── AI Lyrics Translation Sync ──
+    LaunchedEffect(entriesWithWords, mediaMetadata?.id, targetLanguage, translationVersion, autoTranslate) {
+        val songId = mediaMetadata?.id ?: return@LaunchedEffect
+        if (entriesWithWords.isEmpty()) return@LaunchedEffect
 
-                tokens.forEachIndexed { wordIdx, token ->
-                    val weight = token.length.toDouble() / totalChars
-                    val wordDurMs = lineDurationMs * weight
-                    val wordStartSec = lineStartSec + (currentOffsetMs / 1000.0)
-                    val wordEndSec = wordStartSec + (wordDurMs / 1000.0)
+        if (autoTranslate) {
+            val hasLoaded = LyricsTranslationHelper.loadTranslationsFromCache(
+                lyrics = entriesWithWords,
+                context = context,
+                songId = songId,
+                targetLanguageCode = targetLanguage
+            )
 
-                    val wordText = if (wordIdx < tokens.lastIndex && !isCjkText) "$token " else token
-                    words.add(
-                        WordTimestamp(
-                            text = wordText,
-                            startTime = wordStartSec,
-                            endTime = wordEndSec,
-                        )
+            // Auto-translate if enabled and not already translated or translating
+            if (!hasLoaded && !LyricsTranslationHelper.isTranslating()) {
+                val key = if (aiProvider == "DeepL") deeplApiKey else openRouterApiKey
+                if (key.isNotBlank()) {
+                    LyricsTranslationHelper.translateLyrics(
+                        lyrics = entriesWithWords,
+                        targetLanguageCode = targetLanguage,
+                        apiKey = key,
+                        baseUrl = openRouterBaseUrl,
+                        model = openRouterModel,
+                        mode = translateMode,
+                        customPrompt = customPrompt.takeIf { it.isNotBlank() },
+                        provider = aiProvider,
+                        context = context,
+                        songId = songId,
+                        scope = scope
                     )
-                    currentOffsetMs += wordDurMs
                 }
-                entry.copy(words = words)
             }
         }
     }
@@ -328,10 +329,7 @@ fun LyricsV2(
             val sliderPos = sliderPositionProvider()
             val pos = sliderPos ?: player.currentPosition
 
-            // Add a visual tuning offset so animations feel instantly responsive and perfectly land on beat
-            val visualTuningOffsetMs = 150L
-            currentPositionMs = pos + leadMs + visualTuningOffsetMs
-
+            currentPositionMs = pos + leadMs
             currentLineIndex = findCurrentLineIndex(entriesWithWords, currentPositionMs, 0L)
             delay(16L) // ~60fps polling
         }
@@ -563,10 +561,50 @@ fun LyricsV2(
                         ),
                     horizontalAlignment = horizontalAlignment,
                 ) {
-                    if (item.words != null && isSynced) {
-                        // ── Word-synced rendering ──
+                    val translatedText by item.translatedTextFlow.collectAsState()
+                    val showDirectTranslation = replaceOriginalLyrics && !translatedText.isNullOrBlank()
+
+                    val translatedWords = remember(translatedText, item.time, index, entriesWithWords.size) {
+                        if (translatedText.isNullOrBlank() || item.time < 0) null
+                        else {
+                            val lineStartMs = if (!item.words.isNullOrEmpty()) {
+                                (item.words.first().startTime * 1000.0).toLong().coerceAtLeast(item.time)
+                            } else {
+                                item.time
+                            }
+                            val lineDurationMs = if (!item.words.isNullOrEmpty()) {
+                                val endMs = (item.words.last().endTime * 1000.0).toLong()
+                                if (endMs > lineStartMs) (endMs - lineStartMs).coerceIn(800L, 12000L) else 4000L
+                            } else {
+                                val nextEntryTime = if (index < entriesWithWords.lastIndex) {
+                                    entriesWithWords[index + 1].time
+                                } else {
+                                    item.time + 5000L
+                                }
+                                (nextEntryTime - lineStartMs).coerceIn(800L, 10000L)
+                            }
+                            synthesizeWordTimestamps(translatedText!!, lineStartMs, lineDurationMs)
+                        }
+                    }
+
+                    if (showDirectTranslation && !translatedWords.isNullOrEmpty() && isSynced) {
+                        // ── Word-synced direct translated lyrics rendering ──
                         LyricsLineV2(
-                            words = item.words!!,
+                            words = translatedWords,
+                            isActive = isActive,
+                            isPast = isPast,
+                            currentPositionMs = currentPositionMs,
+                            textColor = textColor,
+                            inactiveAlpha = inactiveAlpha,
+                            baseFontSize = lyricsTextSize,
+                            isLineAllBackground = isAllBackground,
+                            textAlign = textAlign,
+                            lyricsFontFamily = lyricsFontFamily,
+                        )
+                    } else if (!item.words.isNullOrEmpty() && isSynced && !showDirectTranslation) {
+                        // ── Word-synced original lyrics rendering ──
+                        LyricsLineV2(
+                            words = item.words,
                             isActive = isActive,
                             isPast = isPast,
                             currentPositionMs = currentPositionMs,
@@ -580,7 +618,7 @@ fun LyricsV2(
                     } else {
                         // ── Plain text rendering ──
                         Text(
-                            text = item.text,
+                            text = if (showDirectTranslation) translatedText!! else item.text,
                             style = MaterialTheme.typography.headlineMedium.copy(
                                 fontSize = if (isAllBackground) (lyricsTextSize * 0.82f).sp else lyricsTextSize.sp,
                                 fontWeight = if (isActive) FontWeight.Bold else FontWeight.Medium,
@@ -596,7 +634,7 @@ fun LyricsV2(
 
                     // ── Romanization ──
                     val romanizedText by item.romanizedTextFlow.collectAsState()
-                    if (romanizedText != null) {
+                    if (!showDirectTranslation && romanizedText != null) {
                         Text(
                             text = romanizedText!!,
                             style = MaterialTheme.typography.bodyMedium.copy(
@@ -612,6 +650,46 @@ fun LyricsV2(
                                 .fillMaxWidth()
                                 .padding(top = (lyricsTextSize * 0.3f).dp),
                         )
+                    }
+
+                    // ── AI Lyrics Translation ──
+                    if (!showDirectTranslation && !translatedText.isNullOrBlank()) {
+                        if (isSynced && !translatedWords.isNullOrEmpty()) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(top = (lyricsTextSize * 0.25f).dp)
+                            ) {
+                                LyricsLineV2(
+                                    words = translatedWords,
+                                    isActive = isActive,
+                                    isPast = isPast,
+                                    currentPositionMs = currentPositionMs,
+                                    textColor = textColor,
+                                    inactiveAlpha = inactiveAlpha * 0.75f,
+                                    baseFontSize = lyricsTextSize * 0.65f,
+                                    isLineAllBackground = isAllBackground,
+                                    textAlign = textAlign,
+                                    lyricsFontFamily = lyricsFontFamily,
+                                )
+                            }
+                        } else {
+                            Text(
+                                text = translatedText!!,
+                                style = MaterialTheme.typography.bodyMedium.copy(
+                                    fontSize = (lyricsTextSize * 0.65f).sp,
+                                    lineHeight = (lyricsTextSize * 0.85f).sp,
+                                    fontWeight = FontWeight.Medium,
+                                    fontStyle = if (isAllBackground) FontStyle.Italic else FontStyle.Normal,
+                                    fontFamily = lyricsFontFamily ?: MaterialTheme.typography.bodyMedium.fontFamily,
+                                ),
+                                color = textColor.copy(alpha = if (isActive) 0.90f else inactiveAlpha * 0.75f),
+                                textAlign = textAlign,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(top = (lyricsTextSize * 0.25f).dp),
+                            )
+                        }
                     }
                 }
             }
@@ -753,7 +831,7 @@ fun LyricsV2(
                                 runCatching {
 
                                     val bitmap =
-                                        BTTUNEComposeToImage.createLyricsImageWithConfig(
+                                        AirBeatsComposeToImage.createLyricsImageWithConfig(
                                             context = context,
                                             coverArtUrl = metadata.thumbnailUrl,
                                             songTitle = title,
@@ -763,7 +841,7 @@ fun LyricsV2(
                                             outputSize = 1080,
                                         )
 
-                                    val uri = BTTUNEComposeToImage.saveBitmapAsFile(
+                                    val uri = AirBeatsComposeToImage.saveBitmapAsFile(
                                         context = context,
                                         bitmap = bitmap,
                                         fileName = "lyrics_${System.currentTimeMillis()}",
@@ -787,7 +865,7 @@ fun LyricsV2(
                                 runCatching {
                                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                                         val bitmap =
-                                            BTTUNEComposeToImage.createLyricsImageWithConfig(
+                                            AirBeatsComposeToImage.createLyricsImageWithConfig(
                                                 context = context,
                                                 coverArtUrl = metadata.thumbnailUrl,
                                                 songTitle = title,
@@ -797,7 +875,7 @@ fun LyricsV2(
                                                 outputSize = 1080,
                                             )
 
-                                        BTTUNEComposeToImage.saveBitmapAsFile(
+                                        AirBeatsComposeToImage.saveBitmapAsFile(
                                             context = context,
                                             bitmap = bitmap,
                                             fileName = "lyrics_saved_${System.currentTimeMillis()}",
@@ -858,7 +936,7 @@ fun LyricsV2(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clickable {
-                                val songLink = "https://play.bttune.app/song?id=${mediaMetadata?.id}"
+                                val songLink = com.bt.bttune.utils.RemoteConfigManager.getSongShareUrl(mediaMetadata?.id ?: "")
                                 val shareIntent = Intent().apply {
                                     action = Intent.ACTION_SEND
                                     type = "text/plain"
@@ -1061,7 +1139,7 @@ fun LyricsV2(
                             scope.launch {
                                 try {
                                     val exportSize = 1080
-                                    val image = BTTUNEComposeToImage.createLyricsImage(
+                                    val image = AirBeatsComposeToImage.createLyricsImage(
                                         context = context,
                                         coverArtUrl = coverUrl,
                                         songTitle = songTitle,
@@ -1073,7 +1151,7 @@ fun LyricsV2(
                                     )
                                     val timestamp = System.currentTimeMillis()
                                     val filename = "lyrics_$timestamp"
-                                    val uri = BTTUNEComposeToImage.saveBitmapAsFile(context, image, filename)
+                                    val uri = AirBeatsComposeToImage.saveBitmapAsFile(context, image, filename)
                                     val shareIntent = Intent(Intent.ACTION_SEND).apply {
                                         type = "image/png"
                                         putExtra(Intent.EXTRA_STREAM, uri)
@@ -1098,6 +1176,84 @@ fun LyricsV2(
             }
         }
     }
+}
+
+
+// ──────────────────────────────────────────────────────────────────────
+// Helper: Synthesizes word timestamps for text lines lacking word sync
+// ──────────────────────────────────────────────────────────────────────
+
+private fun synthesizeWordTimestamps(
+    text: String,
+    startTimeMs: Long,
+    durationMs: Long,
+): List<WordTimestamp> {
+    if (text.isBlank() || startTimeMs < 0) return emptyList()
+    val lineStartSec = startTimeMs / 1000.0
+    val isCjkText = isJapanese(text) || isChinese(text) || isKorean(text)
+    val tokens = if (isCjkText) {
+        val chars = mutableListOf<String>()
+        var currentWord = StringBuilder()
+        text.forEach { char ->
+            if (char.isWhitespace()) {
+                if (currentWord.isNotEmpty()) {
+                    chars.add(currentWord.toString())
+                    currentWord.clear()
+                }
+                chars.add(char.toString())
+            } else if (isJapanese(char.toString()) || isChinese(char.toString()) || isKorean(char.toString())) {
+                if (currentWord.isNotEmpty()) {
+                    chars.add(currentWord.toString())
+                    currentWord.clear()
+                }
+                chars.add(char.toString())
+            } else {
+                currentWord.append(char)
+            }
+        }
+        if (currentWord.isNotEmpty()) {
+            chars.add(currentWord.toString())
+        }
+
+        // Group spaces onto the preceding word
+        val groupedTokens = mutableListOf<String>()
+        chars.forEachIndexed { _, c ->
+            if (c.isBlank()) {
+                if (groupedTokens.isNotEmpty()) {
+                    groupedTokens[groupedTokens.lastIndex] = groupedTokens.last() + c
+                }
+            } else {
+                groupedTokens.add(c)
+            }
+        }
+        groupedTokens
+    } else {
+        text.split(Regex("\\s+")).filter { it.isNotBlank() }
+    }
+    if (tokens.isEmpty()) return emptyList()
+
+    // Weight each token by character count for proportional distribution
+    val totalChars = tokens.sumOf { it.length }.coerceAtLeast(1)
+    val words = mutableListOf<WordTimestamp>()
+    var currentOffsetMs = 0.0
+
+    tokens.forEachIndexed { wordIdx, token ->
+        val weight = token.length.toDouble() / totalChars
+        val wordDurMs = durationMs * weight
+        val wordStartSec = lineStartSec + (currentOffsetMs / 1000.0)
+        val wordEndSec = wordStartSec + (wordDurMs / 1000.0)
+
+        val wordText = if (wordIdx < tokens.lastIndex && !isCjkText) "$token " else token
+        words.add(
+            WordTimestamp(
+                text = wordText,
+                startTime = wordStartSec,
+                endTime = wordEndSec,
+            )
+        )
+        currentOffsetMs += wordDurMs
+    }
+    return words
 }
 
 

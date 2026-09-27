@@ -97,7 +97,7 @@ import com.bt.bttune.ui.utils.backToMain
 import com.bt.bttune.utils.makeTimeString
 import com.bt.bttune.utils.rememberEnumPreference
 import com.bt.bttune.utils.rememberPreference
-import com.bt.bttune.kizzy.rpc.KizzyRPC
+import com.bt.bttune.discordrpc.rpc.DiscordRpcClient
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -135,7 +135,7 @@ fun DiscordSettings(
         val token = discordToken
         if (token.isEmpty()) return@LaunchedEffect
         coroutineScope.launch(Dispatchers.IO) {
-            KizzyRPC.getUserInfo(token).onSuccess {
+            DiscordRpcClient.getUserInfo(token).onSuccess {
                 discordUsername = it.username
                 discordName = it.name
             }
@@ -685,7 +685,7 @@ fun EnhancedRichPresence(
                         onClick = {
                             val intent = Intent(
                                 Intent.ACTION_VIEW,
-                                "https://play.bttune.app/song?id=${song?.id}".toUri()
+                                com.bt.bttune.utils.RemoteConfigManager.getSongShareUrl(song?.id ?: "").toUri()
                             )
                             context.startActivity(intent)
                         },
@@ -706,11 +706,16 @@ fun EnhancedRichPresence(
                     // Botón BTTUNE mejorado
                     OutlinedButton(
                         onClick = {
-                            val intent = Intent(
-                                Intent.ACTION_VIEW,
-                                "https://github.com/batz-dev/bttune-android".toUri()
-                            )
-                            context.startActivity(intent)
+                            val targetUrl = com.bt.bttune.utils.RemoteConfigManager.websiteUrl.ifBlank {
+                                com.bt.bttune.utils.RemoteConfigManager.getReleasesPageUrl()
+                            }
+                            if (targetUrl.isNotBlank()) {
+                                val intent = Intent(
+                                    Intent.ACTION_VIEW,
+                                    targetUrl.toUri()
+                                )
+                                context.startActivity(intent)
+                            }
                         },
                         modifier = Modifier.weight(1f),
                         border = BorderStroke(

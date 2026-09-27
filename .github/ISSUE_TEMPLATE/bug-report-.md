@@ -3,7 +3,7 @@ name: Bug Report
 about: Report a bug found in AirBeats to help us improve the application
 title: "[BUG] Brief description of the issue"
 labels: bug
-assignees: batz-dev
+assignees: darkxvenom
 ---
 
 ## Bug Description

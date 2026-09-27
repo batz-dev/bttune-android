@@ -1,5 +1,5 @@
 /*
- * BTTUNE Project Original (2026)
+ * AirBeats Project Original (2026)
  * Licensed Under GPL-3.0 | see git history for contributors
  */
 
@@ -24,7 +24,7 @@ import com.bt.bttune.models.MediaMetadata
 // ─────────────────────────────────────────────────────────────────────────────
 
 @Composable
-private fun rememberBTTUNEAdjustedFontSize(
+private fun rememberAirBeatsAdjustedFontSize(
     text: String,
     maxWidth: Dp,
     maxHeight: Dp,

@@ -11,7 +11,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import com.bt.bttune.App
-import com.bt.bttune.utils.BTTUNEStatsCloudSync
+import com.bt.bttune.utils.AirBeatsStatsCloudSync
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import timber.log.Timber
@@ -45,7 +45,7 @@ fun NameProvider(
             scope.launch {
                 namePreferenceManager.saveUserName(name)
                 try {
-                    BTTUNEStatsCloudSync.syncDaily(
+                    AirBeatsStatsCloudSync.syncDaily(
                         context = App.instance,
                         database = App.instance.database,
                         namePreferenceManager = namePreferenceManager,

@@ -449,7 +449,7 @@ fun ListeningTimePage(hours: Double) {
             )
             Spacer(modifier = Modifier.height(16.dp))
             Text(
-                text = "listening to music on BTTUNE.",
+                text = "listening to music on AirBeats.",
                 fontSize = 20.sp,
                 fontWeight = FontWeight.Normal,
                 color = Color.White.copy(alpha = 0.8f),

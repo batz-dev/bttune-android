@@ -1,8 +1,11 @@
 package com.bt.bttune.ui.screens
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.wrapContentHeight
+import com.bt.bttune.ui.screens.search.airbeatsChartsItems
+import com.bt.bttune.ui.screens.search.recentSearchesItems
 import androidx.compose.animation.togetherWith
 import kotlinx.coroutines.launch
 import com.valentinilk.shimmer.shimmer
@@ -23,6 +26,7 @@ import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.width
@@ -38,7 +42,8 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults.Indicator
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
 import androidx.compose.material3.pulltorefresh.pullToRefresh
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
@@ -95,6 +100,14 @@ import com.bt.bttune.viewmodels.MoodAndGenresViewModel
 import java.net.URLEncoder
 import com.bt.bttune.ui.screens.settings.DarkMode
 import com.bt.bttune.constants.DarkModeKey
+import com.bt.bttune.constants.HiddenHomeSectionsKey
+import com.bt.bttune.constants.MaterialHomeSection
+import com.bt.bttune.ui.component.HomeFloatingActions
+import com.bt.bttune.ui.component.HomeTasteStrip
+import com.bt.bttune.ui.component.UniversalHomeHeroBanner
+import com.bt.bttune.ui.component.UniversalArtistSpotlightCard
+import com.bt.bttune.ui.component.UniversalTopArtistsRow
+import com.bt.bttune.ui.component.HomeThemeStyle
 import com.bt.bttune.utils.rememberEnumPreference
 
 @Composable
@@ -112,7 +125,39 @@ private val SpotifyCard @Composable get() = if (isAppInDarkTheme()) Color(0xFF18
 private val SpotifyPill @Composable get() = if (isAppInDarkTheme()) Color(0xFF2A2A2A) else Color(0xFFE5E5E5)
 private val SpotifyText @Composable get() = if (isAppInDarkTheme()) Color.White else Color.Black
 
-@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class, dev.chrisbanes.haze.materials.ExperimentalHazeMaterialsApi::class)
+@Composable
+fun SpotifyHeaderActions(navController: NavController) {
+    androidx.compose.material3.IconButton(onClick = { navController.navigate("settings/developer_news") }) {
+        androidx.compose.material3.Icon(
+            painter = androidx.compose.ui.res.painterResource(R.drawable.newspaper),
+            contentDescription = "News from Developer",
+            tint = SpotifyText,
+            modifier = Modifier.size(24.dp)
+        )
+    }
+    androidx.compose.material3.IconButton(onClick = { navController.navigate("new_release") }) {
+        androidx.compose.material3.Icon(
+            painter = androidx.compose.ui.res.painterResource(R.drawable.notification_on),
+            contentDescription = "New Releases",
+            tint = SpotifyText,
+            modifier = Modifier.size(24.dp)
+        )
+    }
+    androidx.compose.material3.IconButton(onClick = { navController.navigate("settings") }) {
+        androidx.compose.material3.Icon(
+            painter = androidx.compose.ui.res.painterResource(R.drawable.settings),
+            contentDescription = "Settings",
+            tint = SpotifyText,
+            modifier = Modifier.size(24.dp)
+        )
+    }
+}
+
+@OptIn(
+    androidx.compose.foundation.ExperimentalFoundationApi::class,
+    dev.chrisbanes.haze.materials.ExperimentalHazeMaterialsApi::class,
+    ExperimentalMaterial3ExpressiveApi::class
+)
 @Composable
 fun SpotifyHomeScreen(
     navController: NavController,
@@ -144,6 +189,8 @@ fun SpotifyHomeScreen(
     }
 
     val hazeState = androidx.compose.runtime.remember { dev.chrisbanes.haze.HazeState() }
+    val hiddenSections by com.bt.bttune.utils.rememberPreference(HiddenHomeSectionsKey, defaultValue = emptySet())
+    fun isSectionVisible(section: MaterialHomeSection): Boolean = section.id !in hiddenSections
 
     Box(Modifier.fillMaxSize()) {
         Box(
@@ -152,18 +199,27 @@ fun SpotifyHomeScreen(
                 .background(SpotifyBg)
                 .haze(state = hazeState)
         ) {
-            SimpMusicMeshBackground()
+            AirBeatsMeshBackground()
 
             BoxWithConstraints(
                 modifier = Modifier
                     .fillMaxSize()
-                .pullToRefresh(
-                    state = pullRefreshState,
-                    isRefreshing = isRefreshing,
-                    onRefresh = viewModel::refresh,
-                ),
-        ) {
-            LazyColumn(
+                    .pullToRefresh(
+                        state = pullRefreshState,
+                        isRefreshing = isRefreshing,
+                        onRefresh = viewModel::refresh,
+                    )
+            ) {
+                val freshPicks = remember(quickPicks) { quickPicks?.drop(6).orEmpty().take(12) }
+                val artistTriples = remember(quickPicks) {
+                    quickPicks?.mapNotNull { pick ->
+                        pick.artists.firstOrNull()?.let { artist ->
+                            Triple(artist, artist.thumbnailUrl, pick.song.thumbnailUrl)
+                        }
+                    }?.distinctBy { it.first.id }?.take(10).orEmpty()
+                }
+
+                LazyColumn(
                 state = lazyListState,
                 contentPadding = PaddingValues(
                     top = WindowInsets.systemBars.asPaddingValues().calculateTopPadding() + 145.dp,
@@ -175,55 +231,155 @@ fun SpotifyHomeScreen(
                 modifier = Modifier.fillMaxSize(),
             ) {
 
-                quickPicks?.takeIf { it.isNotEmpty() }?.let { picks ->
-                    item {
-                        NavigationTitle(title = "Quick picks")
-                        SpotifyLocalRow(picks.take(12), playerConnection)
+                if (isSectionVisible(MaterialHomeSection.HERO)) {
+                    item(key = "spotify_hero") {
+                        UniversalHomeHeroBanner(
+                            title = "Smart Radio",
+                            subtitle = "Endless discovery tuned to your vibes",
+                            onPlayRadio = {
+                                quickPicks?.firstOrNull()?.let { firstTrack ->
+                                    playerConnection.playQueue(YouTubeQueue.radio(firstTrack.toMediaMetadata()))
+                                }
+                            },
+                            style = HomeThemeStyle.SPOTIFY,
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)
+                        )
                     }
                 }
 
-                keepListening?.filterIsInstance<Song>()?.takeIf { it.isNotEmpty() }?.let { items ->
-                    item {
-                        NavigationTitle(title = "Keep listening")
-                        SpotifyLocalRow(items.take(12), playerConnection)
+                if (isSectionVisible(MaterialHomeSection.TASTE_STRIP)) {
+                    item(key = "spotify_taste_strip") {
+                        HomeTasteStrip(
+                            onTagClick = { tag ->
+                                val encoded = java.net.URLEncoder.encode(tag, "UTF-8")
+                                navController.navigate("search/$encoded")
+                            },
+                            style = HomeThemeStyle.SPOTIFY,
+                            modifier = Modifier.padding(vertical = 4.dp)
+                        )
                     }
                 }
 
-                accountPlaylists?.takeIf { it.isNotEmpty() }?.let { playlists ->
-                    item {
-                        NavigationTitle(title = "$accountName's playlists")
-                        SpotifyYtRow(playlists.take(12), navController, playerConnection)
+                if (isSectionVisible(MaterialHomeSection.QUICK_PICKS)) {
+                    quickPicks?.takeIf { it.isNotEmpty() }?.let { picks ->
+                        item {
+                            NavigationTitle(title = "Quick picks")
+                            SpotifyLocalRow(picks.take(12), playerConnection)
+                        }
                     }
                 }
 
-                forgottenFavorites?.takeIf { it.isNotEmpty() }?.let { favorites ->
-                    item {
-                        NavigationTitle(title = "Forgotten favorites")
-                        SpotifyLocalRow(favorites.take(12), playerConnection)
+                if (isSectionVisible(MaterialHomeSection.FRESH_FINDS)) {
+                    if (freshPicks.isNotEmpty()) {
+                        item(key = "spotify_fresh_finds") {
+                            NavigationTitle(title = "Fresh Finds", label = "NEW")
+                            SpotifyLocalRow(freshPicks, playerConnection)
+                        }
                     }
                 }
 
-                similarRecommendations?.forEach { recommendation ->
-                    item {
-                        NavigationTitle(title = "Similar to ${recommendation.title.title}")
-                        SpotifyYtRow(recommendation.items.take(12), navController, playerConnection)
+                if (isSectionVisible(MaterialHomeSection.JUMP_BACK_IN)) {
+                    keepListening?.filterIsInstance<Song>()?.takeIf { it.isNotEmpty() }?.let { items ->
+                        item {
+                            NavigationTitle(title = "Keep listening")
+                            SpotifyLocalRow(items.take(12), playerConnection)
+                        }
+                    }
+                }
+
+                if (isSectionVisible(MaterialHomeSection.MIXES)) {
+                    accountPlaylists?.takeIf { it.isNotEmpty() }?.let { playlists ->
+                        item {
+                            NavigationTitle(title = "$accountName's playlists")
+                            SpotifyYtRow(playlists.take(12), navController, playerConnection)
+                        }
+                    }
+                }
+
+                if (isSectionVisible(MaterialHomeSection.HEAVY_ROTATION)) {
+                    forgottenFavorites?.takeIf { it.isNotEmpty() }?.let { favorites ->
+                        item {
+                            NavigationTitle(title = "Forgotten favorites")
+                            SpotifyLocalRow(favorites.take(12), playerConnection)
+                        }
+                    }
+                }
+
+                if (isSectionVisible(MaterialHomeSection.SPOTLIGHT)) {
+                    quickPicks?.firstOrNull()?.let { pick ->
+                        val artist = pick.artists.firstOrNull()
+                        if (artist != null) {
+                            item(key = "spotify_spotlight") {
+                                UniversalArtistSpotlightCard(
+                                    artistName = artist.name,
+                                    artistId = artist.id,
+                                    thumbnailUrl = artist.thumbnailUrl,
+                                    fallbackThumbnail = pick.song.thumbnailUrl,
+                                    onOpenArtist = {
+                                        artist.id.takeIf { it.isNotBlank() }?.let { navController.navigate("artist/$it") }
+                                    },
+                                    onPlayRadio = {
+                                        playerConnection.playQueue(YouTubeQueue.radio(pick.toMediaMetadata()))
+                                    },
+                                    style = HomeThemeStyle.SPOTIFY,
+                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+
+                if (isSectionVisible(MaterialHomeSection.TOP_ARTISTS)) {
+                    if (artistTriples.isNotEmpty()) {
+                        item(key = "spotify_top_artists") {
+                            NavigationTitle(title = "Your Top Artists")
+                            UniversalTopArtistsRow(
+                                artists = artistTriples,
+                                onArtistClick = { artistId ->
+                                    artistId.takeIf { it.isNotBlank() }?.let { navController.navigate("artist/$it") }
+                                },
+                                style = HomeThemeStyle.SPOTIFY
+                            )
+                        }
+                    }
+                }
+
+                if (isSectionVisible(MaterialHomeSection.BECAUSE_YOU_LISTEN_TO)) {
+                    similarRecommendations?.forEach { recommendation ->
+                        item {
+                            NavigationTitle(title = "Similar to ${recommendation.title.title}")
+                            SpotifyYtRow(recommendation.items.take(12), navController, playerConnection)
+                        }
                     }
                 }
 
                 homePage?.sections?.forEach { section ->
-                    item {
-                        NavigationTitle(
-                            title = section.title,
-                            label = section.label,
-                            onClick = section.endpoint?.let {
-                                {
-                                    navController.navigate(
-                                        "youtube_browse/${it.browseId}?params=${it.params.orEmpty()}",
-                                    )
-                                }
-                            },
-                        )
-                        SpotifyYtRow(section.items.take(12), navController, playerConnection)
+                    val isNewRelease = section.title.contains("New", ignoreCase = true) || section.title.contains("Release", ignoreCase = true)
+                    val isChart = section.title.contains("Chart", ignoreCase = true) || section.title.contains("Top", ignoreCase = true)
+                    val isAlbum = section.title.contains("Album", ignoreCase = true)
+
+                    val shouldRender = when {
+                        isNewRelease -> isSectionVisible(MaterialHomeSection.NEW_RELEASES)
+                        isChart -> isSectionVisible(MaterialHomeSection.CHARTS)
+                        isAlbum -> isSectionVisible(MaterialHomeSection.ALBUMS)
+                        else -> true
+                    }
+
+                    if (shouldRender) {
+                        item {
+                            NavigationTitle(
+                                title = section.title,
+                                label = section.label,
+                                onClick = section.endpoint?.let {
+                                    {
+                                        navController.navigate(
+                                            "youtube_browse/${it.browseId}?params=${it.params.orEmpty()}",
+                                        )
+                                    }
+                                },
+                            )
+                            SpotifyYtRow(section.items.take(12), navController, playerConnection)
+                        }
                     }
                 }
 
@@ -232,7 +388,7 @@ fun SpotifyHomeScreen(
                 }
             }
 
-            Indicator(
+            PullToRefreshDefaults.LoadingIndicator(
                 isRefreshing = isRefreshing,
                 state = pullRefreshState,
                 containerColor = Color(0xFFEAEAEA),
@@ -263,56 +419,56 @@ fun SpotifyHomeScreen(
             hazeState = hazeState,
             modifier = Modifier.align(Alignment.TopCenter),
             bottomContent = {
-                LazyRow(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    contentPadding = PaddingValues(horizontal = 16.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    val chipItems = listOf(
-                        "history" to context.getString(R.string.history),
-                        "liked" to context.getString(R.string.liked),
-                        "offline" to context.getString(R.string.offline),
-                        "stats" to context.getString(R.string.stats),
-                        "search" to context.getString(R.string.search)
-                    )
-                    items(chipItems) { (route, label) ->
-                        androidx.compose.material3.ElevatedFilterChip(
-                            selected = false,
-                            onClick = {
-                                when (route) {
-                                    "history" -> navController.navigate("history")
-                                    "liked" -> navController.navigate("auto_playlist/liked")
-                                    "offline" -> navController.navigate("auto_playlist/downloaded")
-                                    "stats" -> navController.navigate("stats")
-                                    "search" -> navController.navigate(Screens.Search.route)
-                                }
-                            },
-                            label = { Text(label, maxLines = 1) },
-                            shape = CircleShape,
-                            colors = androidx.compose.material3.FilterChipDefaults.elevatedFilterChipColors(
-                                containerColor = Color.Transparent,
-                                labelColor = Color.LightGray,
-                            ),
-                            border = androidx.compose.material3.FilterChipDefaults.filterChipBorder(
-                                enabled = true,
-                                selected = false,
-                                borderColor = Color.Gray.copy(alpha = 0.8f),
-                            ),
+                if (isSectionVisible(MaterialHomeSection.QUICK_TILES)) {
+                    LazyRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        contentPadding = PaddingValues(horizontal = 16.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        val chipItems = listOf(
+                            "history" to context.getString(R.string.history),
+                            "liked" to context.getString(R.string.liked),
+                            "offline" to context.getString(R.string.offline),
+                            "stats" to context.getString(R.string.stats),
+                            "search" to context.getString(R.string.search)
                         )
+                        items(chipItems) { (route, label) ->
+                            androidx.compose.material3.ElevatedFilterChip(
+                                selected = false,
+                                onClick = {
+                                    when (route) {
+                                        "history" -> navController.navigate("history")
+                                        "liked" -> navController.navigate("auto_playlist/liked")
+                                        "offline" -> navController.navigate("auto_playlist/downloaded")
+                                        "stats" -> navController.navigate("stats")
+                                        "search" -> navController.navigate(Screens.Search.route)
+                                    }
+                                },
+                                label = { Text(label, maxLines = 1) },
+                                shape = CircleShape,
+                                colors = androidx.compose.material3.FilterChipDefaults.elevatedFilterChipColors(
+                                    containerColor = Color.Transparent,
+                                    labelColor = Color.LightGray,
+                                ),
+                                border = androidx.compose.material3.FilterChipDefaults.filterChipBorder(
+                                    enabled = true,
+                                    selected = false,
+                                    borderColor = Color.Gray.copy(alpha = 0.8f),
+                                ),
+                            )
+                        }
                     }
                 }
             }
         ) {
-            androidx.compose.material3.IconButton(onClick = { navController.navigate("new_release") }) {
-                androidx.compose.material3.Icon(androidx.compose.ui.res.painterResource(R.drawable.notification_on), contentDescription = null, tint = SpotifyText, modifier = Modifier.size(24.dp))
-            }
-            androidx.compose.material3.IconButton(onClick = { navController.navigate("history") }) {
-                androidx.compose.material3.Icon(androidx.compose.ui.res.painterResource(R.drawable.history), contentDescription = null, tint = SpotifyText, modifier = Modifier.size(24.dp))
-            }
-            androidx.compose.material3.IconButton(onClick = { navController.navigate("settings") }) {
-                androidx.compose.material3.Icon(androidx.compose.ui.res.painterResource(R.drawable.settings), contentDescription = null, tint = SpotifyText, modifier = Modifier.size(24.dp))
-            }
+            SpotifyHeaderActions(navController)
         }
+
+        // Floating 3-dot FAB
+        HomeFloatingActions(
+            navController = navController,
+            lazyListState = lazyListState
+        )
     }
 }
 
@@ -325,11 +481,15 @@ fun SpotifySearchScreen(
     val viewState by viewModel.viewState.collectAsState()
     val database = com.bt.bttune.LocalDatabase.current
     val keyboardController = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
+    var selectedTab by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(com.bt.bttune.ui.component.SearchTab.BROWSE_ALL) }
+    val chartsViewModel: com.bt.bttune.viewmodels.ChartsViewModel = androidx.hilt.navigation.compose.hiltViewModel()
 
     SpotifyScaffold(
         title = stringResource(R.string.search),
         subtitle = "Find your favorite music",
-        actions = {}
+        actions = {
+            SpotifyHeaderActions(navController)
+        }
     ) {
         item {
             SpotifySearchInput(
@@ -343,6 +503,15 @@ fun SpotifySearchScreen(
                     navController.navigate(com.bt.bttune.ui.screens.musicrecognition.MusicRecognitionRoute)
                 }
             )
+        }
+
+        if (query.isBlank()) {
+            item {
+                com.bt.bttune.ui.component.SearchPillSwitcher(
+                    selectedTab = selectedTab,
+                    onTabSelected = { selectedTab = it }
+                )
+            }
         }
         
         if (query.isNotBlank() && (viewState.history.isNotEmpty() || viewState.suggestions.isNotEmpty())) {
@@ -382,55 +551,76 @@ fun SpotifySearchScreen(
                 )
             }
         } else {
-            item {
-                SpotifySectionTitle("Browse all")
-                Spacer(modifier = Modifier.height(10.dp))
-                val genres = listOf(
-                    "Pop" to Color(0xFFFF4632),
-                    "Hip-Hop" to Color(0xFFBC5900),
-                    "Rock" to Color(0xFFE1118C),
-                    "Latin" to Color(0xFFE1118C),
-                    "Educational" to Color(0xFF477D95),
-                    "Documentary" to Color(0xFF509BF5),
-                    "Comedy" to Color(0xFFE13300),
-                    "Charts" to Color(0xFF8D67AB),
-                    "Dance/Electronic" to Color(0xFFD84000),
-                    "Mood" to Color(0xFFE1118C),
-                    "Indie" to Color(0xFFE91429),
-                    "Workout" to Color(0xFF777777),
-                    "K-pop" to Color(0xFF148A08),
-                    "Chill" to Color(0xFFD84000),
-                    "Sleep" to Color(0xFF1E3264),
-                    "Party" to Color(0xFF537AA1),
-                    "At Home" to Color(0xFF5179A1),
-                    "Decades" to Color(0xFFBA5D07)
-                )
-                Column(verticalArrangement = Arrangement.spacedBy(16.dp), modifier = Modifier.padding(horizontal = 16.dp)) {
-                    genres.chunked(2).forEach { row ->
-                        Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                            row.forEach { (chip, color) ->
-                                Box(
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .height(100.dp)
-                                        .clip(RoundedCornerShape(8.dp))
-                                        .background(color)
-                                        .clickable {
-                                            navController.navigate("search/${URLEncoder.encode(chip, "UTF-8")}")
+            when (selectedTab) {
+                com.bt.bttune.ui.component.SearchTab.BROWSE_ALL -> {
+                    item {
+                        SpotifySectionTitle("Browse all")
+                        Spacer(modifier = Modifier.height(10.dp))
+                        val genres = listOf(
+                            "Pop" to Color(0xFFFF4632),
+                            "Hip-Hop" to Color(0xFFBC5900),
+                            "Rock" to Color(0xFFE1118C),
+                            "Latin" to Color(0xFFE1118C),
+                            "Educational" to Color(0xFF477D95),
+                            "Documentary" to Color(0xFF509BF5),
+                            "Comedy" to Color(0xFFE13300),
+                            "Charts" to Color(0xFF8D67AB),
+                            "Dance/Electronic" to Color(0xFFD84000),
+                            "Mood" to Color(0xFFE1118C),
+                            "Indie" to Color(0xFFE91429),
+                            "Workout" to Color(0xFF777777),
+                            "K-pop" to Color(0xFF148A08),
+                            "Chill" to Color(0xFFD84000),
+                            "Sleep" to Color(0xFF1E3264),
+                            "Party" to Color(0xFF537AA1),
+                            "At Home" to Color(0xFF5179A1),
+                            "Decades" to Color(0xFFBA5D07)
+                        )
+                        Column(verticalArrangement = Arrangement.spacedBy(16.dp), modifier = Modifier.padding(horizontal = 16.dp)) {
+                            genres.chunked(2).forEach { row ->
+                                Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                                    row.forEach { (chip, color) ->
+                                        Box(
+                                            modifier = Modifier
+                                                .weight(1f)
+                                                .height(100.dp)
+                                                .clip(RoundedCornerShape(8.dp))
+                                                .background(color)
+                                                .clickable {
+                                                    navController.navigate("search/${URLEncoder.encode(chip, "UTF-8")}")
+                                                }
+                                                .padding(12.dp)
+                                        ) {
+                                            Text(
+                                                text = chip,
+                                                color = Color.White,
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 18.sp
+                                            )
                                         }
-                                        .padding(12.dp)
-                                ) {
-                                    Text(
-                                        text = chip,
-                                        color = Color.White,
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 18.sp
-                                    )
+                                    }
+                                    if (row.size == 1) Spacer(Modifier.weight(1f))
                                 }
                             }
-                            if (row.size == 1) Spacer(Modifier.weight(1f))
                         }
                     }
+                }
+                com.bt.bttune.ui.component.SearchTab.AIRBEATS_CHARTS -> {
+                    airbeatsChartsItems(
+                        navController = navController,
+                        viewModel = chartsViewModel
+                    )
+                }
+                com.bt.bttune.ui.component.SearchTab.RECENT_SEARCHES -> {
+                    recentSearchesItems(
+                        onSearch = { queryText: String ->
+                            val encoded = URLEncoder.encode(queryText, "UTF-8")
+                            navController.navigate("search/$encoded")
+                            keyboardController?.hide()
+                        },
+                        onFillQuery = { queryText: String -> viewModel.query.value = queryText },
+                        itemTextColor = Color.White
+                    )
                 }
             }
         }
@@ -454,9 +644,7 @@ fun SpotifyExploreScreen(
         title = stringResource(R.string.explore),
         subtitle = "Fresh music and moods",
         actions = {
-            androidx.compose.material3.IconButton(onClick = { navController.navigate(Screens.Search.route) }) {
-                androidx.compose.material3.Icon(androidx.compose.ui.res.painterResource(R.drawable.search), contentDescription = null, tint = SpotifyText, modifier = Modifier.size(24.dp))
-            }
+            SpotifyHeaderActions(navController)
         }
     ) {
         item {
@@ -497,86 +685,99 @@ fun SpotifyExploreScreen(
 @Composable
 fun SpotifyLibraryScreen(navController: NavController) {
     var filterType by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(com.bt.bttune.constants.LibraryFilter.PLAYLISTS) }
+    val playerInsets = LocalPlayerAwareWindowInsets.current
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    val layoutDirection = androidx.compose.ui.platform.LocalLayoutDirection.current
+    val contentInsets = androidx.compose.foundation.layout.WindowInsets(
+        playerInsets.getLeft(density, layoutDirection),
+        0,
+        playerInsets.getRight(density, layoutDirection),
+        // Keep the player-aware bottom inset for child lists and their FABs.
+        // The top inset is intentionally supplied by this screen's own header spacing.
+        playerInsets.getBottom(density),
+    )
 
-    SpotifyScaffold(
-        title = stringResource(R.string.library),
-        subtitle = "Saved music in BTTUNE",
-        actions = {
-            androidx.compose.material3.IconButton(onClick = { navController.navigate(Screens.Search.route) }) {
-                androidx.compose.material3.Icon(androidx.compose.ui.res.painterResource(R.drawable.search), contentDescription = null, tint = SpotifyText, modifier = Modifier.size(24.dp))
-            }
-            androidx.compose.material3.IconButton(onClick = { navController.navigate("settings") }) {
-                androidx.compose.material3.Icon(androidx.compose.ui.res.painterResource(R.drawable.settings), contentDescription = null, tint = SpotifyText, modifier = Modifier.size(24.dp))
-            }
-        }
-    ) {
-        item {
-            LazyRow(
-                contentPadding = PaddingValues(horizontal = 16.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier.padding(bottom = 8.dp)
-            ) {
-                item {
-                    SpotifyChip(text = stringResource(R.string.playlists), isSelected = filterType == com.bt.bttune.constants.LibraryFilter.PLAYLISTS) {
-                        filterType = com.bt.bttune.constants.LibraryFilter.PLAYLISTS
-                    }
-                }
-                item {
-                    SpotifyChip(text = stringResource(R.string.songs), isSelected = filterType == com.bt.bttune.constants.LibraryFilter.SONGS) {
-                        filterType = com.bt.bttune.constants.LibraryFilter.SONGS
-                    }
-                }
-                item {
-                    SpotifyChip(text = stringResource(R.string.albums), isSelected = filterType == com.bt.bttune.constants.LibraryFilter.ALBUMS) {
-                        filterType = com.bt.bttune.constants.LibraryFilter.ALBUMS
-                    }
-                }
-                item {
-                    SpotifyChip(text = stringResource(R.string.artists), isSelected = filterType == com.bt.bttune.constants.LibraryFilter.ARTISTS) {
-                        filterType = com.bt.bttune.constants.LibraryFilter.ARTISTS
-                    }
-                }
-                item {
-                    SpotifyChip(text = stringResource(R.string.local_files), isSelected = filterType == com.bt.bttune.constants.LibraryFilter.LOCAL) {
-                        filterType = com.bt.bttune.constants.LibraryFilter.LOCAL
-                    }
-                }
-                item {
-                    SpotifyChip(text = stringResource(R.string.history), isSelected = false) {
-                        navController.navigate("history")
-                    }
-                }
-            }
-        }
-        item {
-            val insets = com.bt.bttune.LocalPlayerAwareWindowInsets.current
-            val density = androidx.compose.ui.platform.LocalDensity.current
-            val layoutDirection = androidx.compose.ui.platform.LocalLayoutDirection.current
-            val bottom = insets.getBottom(density)
-            val left = insets.getLeft(density, layoutDirection)
-            val right = insets.getRight(density, layoutDirection)
-            val customInsets = androidx.compose.foundation.layout.WindowInsets(left, 0, right, 0)
-            
+    Box(Modifier.fillMaxSize()) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(SpotifyBg)
+                .haze(state = androidx.compose.runtime.remember { dev.chrisbanes.haze.HazeState() }),
+        ) {
+            AirBeatsMeshBackground()
             androidx.compose.runtime.CompositionLocalProvider(
-                com.bt.bttune.LocalPlayerAwareWindowInsets provides customInsets
+                LocalPlayerAwareWindowInsets provides contentInsets,
             ) {
-                Box(Modifier.fillParentMaxSize()) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(
+                            top = WindowInsets.systemBars.asPaddingValues().calculateTopPadding() + 144.dp,
+                        ),
+                ) {
                     when (filterType) {
                         com.bt.bttune.constants.LibraryFilter.PLAYLISTS ->
-                            com.bt.bttune.ui.screens.library.LibraryPlaylistsScreen(navController = navController, filterContent = {}, onLocalClick = { filterType = com.bt.bttune.constants.LibraryFilter.LOCAL })
+                            com.bt.bttune.ui.screens.library.LibraryPlaylistsScreen(navController = navController, filterContent = {})
                         com.bt.bttune.constants.LibraryFilter.SONGS ->
                             com.bt.bttune.ui.screens.library.LibrarySongsScreen(navController = navController, onDeselect = { filterType = com.bt.bttune.constants.LibraryFilter.PLAYLISTS })
                         com.bt.bttune.constants.LibraryFilter.ALBUMS ->
                             com.bt.bttune.ui.screens.library.LibraryAlbumsScreen(navController = navController, onDeselect = { filterType = com.bt.bttune.constants.LibraryFilter.PLAYLISTS })
                         com.bt.bttune.constants.LibraryFilter.ARTISTS ->
                             com.bt.bttune.ui.screens.library.LibraryArtistsScreen(navController = navController, onDeselect = { filterType = com.bt.bttune.constants.LibraryFilter.PLAYLISTS })
-                        com.bt.bttune.constants.LibraryFilter.LOCAL ->
-                            com.bt.bttune.ui.screens.library.LocalSongsScreen(navController = navController)
-                        else -> {}
+                        else -> Unit
                     }
                 }
             }
         }
+
+        LazyRow(
+            contentPadding = PaddingValues(horizontal = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .statusBarsPadding()
+                .padding(top = 76.dp),
+        ) {
+            item {
+                SpotifyChip(text = stringResource(R.string.playlists), isSelected = filterType == com.bt.bttune.constants.LibraryFilter.PLAYLISTS) {
+                    filterType = com.bt.bttune.constants.LibraryFilter.PLAYLISTS
+                }
+            }
+            item {
+                SpotifyChip(text = stringResource(R.string.songs), isSelected = filterType == com.bt.bttune.constants.LibraryFilter.SONGS) {
+                    filterType = com.bt.bttune.constants.LibraryFilter.SONGS
+                }
+            }
+            item {
+                SpotifyChip(text = stringResource(R.string.albums), isSelected = filterType == com.bt.bttune.constants.LibraryFilter.ALBUMS) {
+                    filterType = com.bt.bttune.constants.LibraryFilter.ALBUMS
+                }
+            }
+            item {
+                SpotifyChip(text = stringResource(R.string.artists), isSelected = filterType == com.bt.bttune.constants.LibraryFilter.ARTISTS) {
+                    filterType = com.bt.bttune.constants.LibraryFilter.ARTISTS
+                }
+            }
+            item {
+                SpotifyChip(text = stringResource(R.string.local_files), isSelected = false) {
+                    navController.navigate("local_songs")
+                }
+            }
+            item {
+                SpotifyChip(text = stringResource(R.string.history), isSelected = false) {
+                    navController.navigate("history")
+                }
+            }
+        }
+
+        SpotifyHeader(
+            title = stringResource(R.string.library),
+            subtitle = "Saved music in BTTUNE",
+            modifier = Modifier.align(Alignment.TopCenter),
+            actions = {
+                SpotifyHeaderActions(navController)
+            },
+        )
     }
 }
 
@@ -584,6 +785,7 @@ fun SpotifyLibraryScreen(navController: NavController) {
 private fun SpotifyScaffold(
     title: String,
     subtitle: String,
+    reservePlayerInset: Boolean = true,
     actions: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit = {},
     content: androidx.compose.foundation.lazy.LazyListScope.() -> Unit
 ) {
@@ -597,12 +799,16 @@ private fun SpotifyScaffold(
                 .background(SpotifyBg)
                 .haze(state = hazeState)
         ) {
-            SimpMusicMeshBackground()
+            AirBeatsMeshBackground()
             LazyColumn(
             state = lazyListState,
             contentPadding = PaddingValues(
                 top = WindowInsets.systemBars.asPaddingValues().calculateTopPadding() + 90.dp,
-                bottom = LocalPlayerAwareWindowInsets.current.asPaddingValues().calculateBottomPadding(),
+                bottom = if (reservePlayerInset) {
+                    LocalPlayerAwareWindowInsets.current.asPaddingValues().calculateBottomPadding()
+                } else {
+                    0.dp
+                },
                 start = LocalPlayerAwareWindowInsets.current.asPaddingValues().calculateStartPadding(androidx.compose.ui.unit.LayoutDirection.Ltr),
                 end = LocalPlayerAwareWindowInsets.current.asPaddingValues().calculateEndPadding(androidx.compose.ui.unit.LayoutDirection.Ltr)
             ),
@@ -627,62 +833,12 @@ private fun SpotifyScaffold(
 }
 
 @Composable
-private fun SimpMusicMeshBackground() {
-    val color1 = MaterialTheme.colorScheme.primary
-    val color2 = MaterialTheme.colorScheme.secondary
-    val color3 = MaterialTheme.colorScheme.tertiary
-    val color4 = MaterialTheme.colorScheme.primaryContainer
-    val color5 = MaterialTheme.colorScheme.secondaryContainer
-    val surfaceColor = SpotifyBg
+private fun AirBeatsMeshBackground() {
+    val playerConnection = LocalPlayerConnection.current
+    val mediaMetadata by playerConnection?.mediaMetadata?.collectAsState() ?: remember { mutableStateOf(null) }
 
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .fillMaxSize(0.7f)
-            .drawWithCache {
-                val width = size.width
-                val height = size.height
-
-                val brush1 = Brush.radialGradient(
-                    colors = listOf(color1.copy(alpha = 0.38f), color1.copy(alpha = 0.24f), color1.copy(alpha = 0.14f), color1.copy(alpha = 0.06f), Color.Transparent),
-                    center = Offset(width * 0.15f, height * 0.1f),
-                    radius = width * 0.55f,
-                )
-                val brush2 = Brush.radialGradient(
-                    colors = listOf(color2.copy(alpha = 0.34f), color2.copy(alpha = 0.2f), color2.copy(alpha = 0.11f), color2.copy(alpha = 0.05f), Color.Transparent),
-                    center = Offset(width * 0.85f, height * 0.2f),
-                    radius = width * 0.65f,
-                )
-                val brush3 = Brush.radialGradient(
-                    colors = listOf(color3.copy(alpha = 0.3f), color3.copy(alpha = 0.17f), color3.copy(alpha = 0.09f), color3.copy(alpha = 0.04f), Color.Transparent),
-                    center = Offset(width * 0.3f, height * 0.45f),
-                    radius = width * 0.6f,
-                )
-                val brush4 = Brush.radialGradient(
-                    colors = listOf(color4.copy(alpha = 0.26f), color4.copy(alpha = 0.14f), color4.copy(alpha = 0.08f), color4.copy(alpha = 0.03f), Color.Transparent),
-                    center = Offset(width * 0.7f, height * 0.5f),
-                    radius = width * 0.7f,
-                )
-                val brush5 = Brush.radialGradient(
-                    colors = listOf(color5.copy(alpha = 0.22f), color5.copy(alpha = 0.12f), color5.copy(alpha = 0.06f), color5.copy(alpha = 0.02f), Color.Transparent),
-                    center = Offset(width * 0.5f, height * 0.75f),
-                    radius = width * 0.8f,
-                )
-                val overlayBrush = Brush.verticalGradient(
-                    colors = listOf(Color.Transparent, Color.Transparent, surfaceColor.copy(alpha = 0.22f), surfaceColor.copy(alpha = 0.55f), surfaceColor),
-                    startY = height * 0.4f,
-                    endY = height,
-                )
-
-                onDrawBehind {
-                    drawRect(brush1)
-                    drawRect(brush2)
-                    drawRect(brush3)
-                    drawRect(brush4)
-                    drawRect(brush5)
-                    drawRect(overlayBrush)
-                }
-            },
+    com.bt.bttune.ui.component.ScreenAdaptiveBackground(
+        artworkUrl = mediaMetadata?.thumbnailUrl
     )
 }
 
@@ -697,29 +853,31 @@ private fun SpotifyHeader(
     actions: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit = {}
 ) {
     Box(modifier = modifier.fillMaxWidth()) {
-        androidx.compose.animation.AnimatedContent(
-            targetState = isAtTop,
-            transitionSpec = {
-                androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(300)).togetherWith(androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(300)))
-            },
-            modifier = Modifier.matchParentSize()
-        ) { isAtTop ->
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .then(
-                        if (isAtTop) {
-                            Modifier.background(Color.Transparent)
-                        } else if (hazeState != null) {
-                            Modifier.hazeChild(
-                                state = hazeState,
-                                style = dev.chrisbanes.haze.materials.HazeMaterials.ultraThin()
-                            )
-                        } else {
-                            Modifier.background(SpotifyBg.copy(alpha = 0.95f))
-                        }
-                    )
+        val blurAlpha by androidx.compose.animation.core.animateFloatAsState(
+            targetValue = if (isAtTop) 0f else 1f,
+            animationSpec = androidx.compose.animation.core.tween(300),
+            label = "SpotifyHeaderBlurAlpha"
+        )
+        if (hazeState != null) {
+            val statusBarPadding = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+            val headerContentHeight = if (title == "BTTUNE") 118.dp else 64.dp
+            com.bt.bttune.ui.component.TopFadeBlur(
+                hazeState = hazeState,
+                pageColor = Color.Transparent,
+                scrimColor = Color.Transparent,
+                height = statusBarPadding + headerContentHeight + com.bt.bttune.ui.component.FADE_RUN,
+                alpha = blurAlpha,
+                modifier = Modifier.align(Alignment.TopCenter)
             )
+        } else {
+            androidx.compose.animation.AnimatedVisibility(
+                visible = !isAtTop,
+                enter = androidx.compose.animation.fadeIn(),
+                exit = androidx.compose.animation.fadeOut(),
+                modifier = Modifier.matchParentSize()
+            ) {
+                Box(modifier = Modifier.fillMaxSize().background(SpotifyBg.copy(alpha = 0.95f)))
+            }
         }
 
         Column(
@@ -759,7 +917,7 @@ private fun SpotifyHeader(
                                             coroutineScope.launch {
                                                 namePrefMgr.saveUserName(newName)
                                                 try {
-                                                    com.bt.bttune.utils.BTTUNEStatsCloudSync.syncDaily(
+                                                    com.bt.bttune.utils.AirBeatsStatsCloudSync.syncDaily(
                                                         context = com.bt.bttune.App.instance,
                                                         database = com.bt.bttune.App.instance.database,
                                                         namePreferenceManager = namePrefMgr,
@@ -780,7 +938,7 @@ private fun SpotifyHeader(
                                 val statsViewModel = com.bt.bttune.ui.utils.safeHiltViewModel<com.bt.bttune.viewmodels.StatsViewModel>()
                                 val totalHours by (statsViewModel?.totalListenHours ?: kotlinx.coroutines.flow.flowOf(0.0)).collectAsState(initial = 0.0)
                                 val currentRank = androidx.compose.runtime.remember(totalHours) {
-                                    if (totalHours >= 1.0) com.bt.bttune.ui.component.BTTUNERank.fromHours(totalHours.toInt()) else null
+                                    if (totalHours >= 1.0) com.bt.bttune.ui.component.AirBeatsRank.fromHours(totalHours.toInt()) else null
                                 }
                                 val rankPrefMgr = androidx.compose.runtime.remember { com.bt.bttune.ui.component.RankPreferenceManager(context) }
                                 val displayedRank by rankPrefMgr.displayedRank.collectAsState(initial = null)
@@ -860,7 +1018,11 @@ private fun SpotifySearchInput(
             Text(
                 text = "What do you want to listen to?", 
                 color = Color.Black.copy(alpha = 0.6f),
-                fontWeight = FontWeight.SemiBold
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 14.sp,
+                maxLines = 1,
+                softWrap = false,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
             ) 
         },
         leadingIcon = { Icon(painterResource(R.drawable.search), contentDescription = null, tint = Color.Black) },
@@ -974,10 +1136,27 @@ private fun SpotifyChip(
     isSelected: Boolean,
     onClick: () -> Unit
 ) {
+    val isFrosted = com.bt.bttune.ui.component.isFrostedGlassUiEnabled()
+    val shape = RoundedCornerShape(32.dp)
     Box(
         modifier = Modifier
-            .clip(RoundedCornerShape(32.dp))
-            .background(if (isSelected) SpotifyGreen else SpotifyText.copy(alpha = 0.12f))
+            .clip(shape)
+            .then(
+                if (isFrosted) {
+                    Modifier.border(
+                        1.dp,
+                        if (isSelected) SpotifyGreen.copy(alpha = 0.5f) else Color.White.copy(alpha = 0.15f),
+                        shape
+                    )
+                } else Modifier
+            )
+            .background(
+                if (isSelected) {
+                    SpotifyGreen
+                } else {
+                    if (isFrosted) Color.White.copy(alpha = 0.08f) else SpotifyText.copy(alpha = 0.12f)
+                }
+            )
             .clickable(onClick = onClick)
             .padding(horizontal = 16.dp, vertical = 8.dp)
     ) {

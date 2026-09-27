@@ -19,10 +19,19 @@ val localProperties = Properties().apply {
         localPropertiesFile.inputStream().use { load(it) }
     }
 }
-val googleApiKey = localProperties.getProperty("google.api.key") ?: ""
-val statsApiKey = localProperties.getProperty("stats.api.key") ?: ""
-val statsBaseUrl = localProperties.getProperty("stats.base.url") ?: ""
-val authBaseUrl = localProperties.getProperty("auth.api.base.url") ?: ""
+val ciKeystoreFile = rootProject.file("app/keystore.jks")
+val localSigningFile = localProperties.getProperty("signing.keystore.file")
+    ?: (findProperty("android.injected.signing.store.file") as? String)
+    ?: (if (ciKeystoreFile.exists()) ciKeystoreFile.absolutePath else null)
+val localSigningStorePassword = localProperties.getProperty("signing.keystore.password")
+    ?: (findProperty("android.injected.signing.store.password") as? String)
+    ?: System.getenv("KEYSTORE_PASSWORD")
+val localSigningKeyAlias = localProperties.getProperty("signing.key.alias")
+    ?: (findProperty("android.injected.signing.key.alias") as? String)
+    ?: System.getenv("KEY_ALIAS")
+val localSigningKeyPassword = localProperties.getProperty("signing.key.password")
+    ?: (findProperty("android.injected.signing.key.password") as? String)
+    ?: System.getenv("KEY_PASSWORD")
 
 fun String.asBuildConfigString(): String =
     "\"${replace("\\", "\\\\").replace("\"", "\\\"")}\""
@@ -34,22 +43,76 @@ android {
 
     defaultConfig {
         applicationId = "com.bt.bttune"
-        minSdk = 26
+        minSdk = 24
         targetSdk = 35
-        versionCode = 174
-        versionName = "6.0.3"
+        versionCode = 229
+        versionName = "6.1.9"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        buildConfigField("String", "GOOGLE_API_KEY", googleApiKey.asBuildConfigString())
-        buildConfigField("String", "STATS_API_KEY", statsApiKey.asBuildConfigString())
-        buildConfigField("String", "STATS_BASE_URL", statsBaseUrl.asBuildConfigString())
-        buildConfigField("String", "AUTH_API_BASE_URL", authBaseUrl.asBuildConfigString())
-        
+
         // Strip out language resources from libraries that the app doesn't support
-        resourceConfigurations += "en"
+        resConfigs("en")
+    }
+
+    signingConfigs {
+        create("flappy") {
+            if (!localSigningFile.isNullOrBlank() && file(localSigningFile).exists()) {
+                storeFile = file(localSigningFile)
+                storePassword = localSigningStorePassword
+                keyAlias = localSigningKeyAlias
+                keyPassword = localSigningKeyPassword
+                enableV1Signing = true
+                enableV2Signing = true
+            }
+        }
+        getByName("debug") {
+            val keystoreFile = file("bttune.keystore")
+            if (keystoreFile.exists()) {
+                isV1SigningEnabled = true
+                isV2SigningEnabled = true
+                storeFile = keystoreFile
+                storePassword = "bttuneapppass"
+                keyAlias = "bttune"
+                keyPassword = "bttuneapppass"
+            } else if (!localSigningFile.isNullOrBlank() && file(localSigningFile).exists()) {
+                storeFile = file(localSigningFile)
+                storePassword = localSigningStorePassword
+                keyAlias = localSigningKeyAlias
+                keyPassword = localSigningKeyPassword
+            } else if (System.getenv("MUSIC_DEBUG_SIGNING_STORE_PASSWORD") != null) {
+                storeFile = file(System.getenv("MUSIC_DEBUG_KEYSTORE_FILE"))
+                storePassword = System.getenv("MUSIC_DEBUG_SIGNING_STORE_PASSWORD")
+                keyAlias = "debug"
+                keyPassword = System.getenv("MUSIC_DEBUG_SIGNING_KEY_PASSWORD")
+            }
+        }
     }
 
     buildTypes {
+        create("nightly") {
+            initWith(getByName("release"))
+            matchingFallbacks += listOf("release")
+            signingConfig = if (file("bttune.keystore").exists()) {
+                signingConfigs.getByName("debug")
+            } else if (!localSigningFile.isNullOrBlank() && file(localSigningFile).exists()) {
+                signingConfigs.getByName("flappy")
+            } else {
+                signingConfigs.getByName("debug")
+            }
+            buildConfigField("boolean", "IS_NIGHTLY", "true")
+            isMinifyEnabled = true
+            isShrinkResources = true
+            isCrunchPngs = false
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+        }
         release {
+            signingConfig = if (file("bttune.keystore").exists()) {
+                signingConfigs.getByName("debug")
+            } else if (!localSigningFile.isNullOrBlank() && file(localSigningFile).exists()) {
+                signingConfigs.getByName("flappy")
+            } else {
+                signingConfigs.getByName("debug")
+            }
+            buildConfigField("boolean", "IS_NIGHTLY", "false")
             isMinifyEnabled = true
             isShrinkResources = true
             isCrunchPngs = false
@@ -57,36 +120,26 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            signingConfig = signingConfigs.getByName("debug")
         }
         debug {
+            signingConfig = if (file("bttune.keystore").exists()) {
+                signingConfigs.getByName("debug")
+            } else if (!localSigningFile.isNullOrBlank() && file(localSigningFile).exists()) {
+                signingConfigs.getByName("flappy")
+            } else {
+                signingConfigs.getByName("debug")
+            }
+            buildConfigField("boolean", "IS_NIGHTLY", "false")
             applicationIdSuffix = ".debug"
         }
     }
+
     splits {
         abi {
             isEnable = true
             reset()
             include("arm64-v8a", "armeabi-v7a", "x86_64")
             isUniversalApk = true
-        }
-    }
-    signingConfigs {
-        getByName("debug") {
-            isV1SigningEnabled = true
-            isV2SigningEnabled = true
-            val keystoreFile = file("bttune.keystore")
-            if (keystoreFile.exists()) {
-                storeFile = keystoreFile
-                storePassword = "bttuneapppass"
-                keyAlias = "bttune"
-                keyPassword = "bttuneapppass"
-            } else if (System.getenv("MUSIC_DEBUG_SIGNING_STORE_PASSWORD") != null) {
-                storeFile = file(System.getenv("MUSIC_DEBUG_KEYSTORE_FILE"))
-                storePassword = System.getenv("MUSIC_DEBUG_SIGNING_STORE_PASSWORD")
-                keyAlias = "bttune"
-                keyPassword = System.getenv("MUSIC_DEBUG_SIGNING_KEY_PASSWORD")
-            }
         }
     }
 
@@ -126,31 +179,28 @@ android {
 
     packaging {
         jniLibs {
-            useLegacyPackaging = false
+            useLegacyPackaging = true
         }
         resources {
             excludes += "META-INF/CONTRIBUTORS.md"
             excludes += "META-INF/LICENSE.md"
             excludes += "META-INF/NOTICE.md"
             excludes += "META-INF/*.md"
-            excludes += "META-INF/LICENSE"
-            excludes += "META-INF/LICENSE.txt"
-            excludes += "META-INF/NOTICE"
-            excludes += "META-INF/NOTICE.txt"
-            excludes += "META-INF/INDEX.LIST"
-            excludes += "META-INF/DEPENDENCIES"
-            excludes += "META-INF/*.version"
-            excludes += "org/bouncycastle/pqc/**"
-            excludes += "org/bouncycastle/x509/*.properties"
-            excludes += "google/protobuf/*.proto"
-            excludes += "com/google/api/client/googleapis/*.p12"
-            excludes += "com/google/api/client/googleapis/*.jks"
+            excludes += "org/bouncycastle/**/*.properties"
+            excludes += "**/*.bin.properties"
+            excludes += "com/google/api/client/**/*.p12"
+            excludes += "com/google/api/client/**/*.jks"
+            excludes += "**/*.proto"
         }
     }
 }
 
 ksp {
     arg("room.schemaLocation", "$projectDir/schemas")
+}
+
+configurations.all {
+    exclude(group = "org.json", module = "json")
 }
 
 dependencies {
@@ -190,6 +240,11 @@ dependencies {
     implementation("androidx.media3:media3-ui:1.8.0")
     implementation(libs.squigglyslider)
 
+    // Google Cast & local streaming proxy
+    implementation("com.google.android.gms:play-services-cast-framework:22.3.1")
+    implementation("androidx.mediarouter:mediarouter:1.7.0")
+    implementation("org.nanohttpd:nanohttpd:2.3.1")
+
     implementation(libs.room.runtime)
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.blurry)
@@ -205,6 +260,9 @@ dependencies {
     implementation(libs.ui.graphics)
     implementation(platform("com.google.firebase:firebase-bom:34.11.0"))
     implementation("com.google.firebase:firebase-messaging")
+    implementation("com.google.firebase:firebase-config")
+    implementation("com.google.firebase:firebase-auth")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.8.1")
     ksp(libs.room.compiler)
     implementation(libs.room.ktx)
 
@@ -231,8 +289,9 @@ dependencies {
     implementation(projects.innertube)
     implementation(projects.kugou)
     implementation(projects.lrclib)
-    implementation(projects.kizzy)
-    implementation(project(":jossredconnect"))
+    implementation(projects.discordrpc)
+    implementation(projects.spotify)
+    implementation(project(":airconnect"))
     implementation(project(":shazamkit"))
     implementation(project(":betterlyrics"))
 
@@ -247,5 +306,3 @@ dependencies {
     implementation(libs.timber)
     testImplementation(libs.junit)
 }
-
-

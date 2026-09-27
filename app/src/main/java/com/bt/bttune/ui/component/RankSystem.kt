@@ -55,31 +55,31 @@ import kotlinx.coroutines.launch
  */
 @Composable
 fun RankBadge(
-    rank: BTTUNERank,
-    displayedRank: BTTUNERank?,
+    rank: AirBeatsRank,
+    displayedRank: AirBeatsRank?,
     size: Dp = 22.dp,
     modifier: Modifier = Modifier,
 ) {
     val badge = displayedRank ?: rank
     val colors = when (badge) {
-        BTTUNERank.Echo -> listOf(Color(0xFF00F2FE), Color(0xFF4FACFE))
-        BTTUNERank.Pulse -> listOf(Color(0xFF00FF87), Color(0xFF60EFFF))
-        BTTUNERank.Bronze -> listOf(Color(0xFFCA7345), Color(0xFFEAA17C))
-        BTTUNERank.Silver -> listOf(Color(0xFFBDC3C7), Color(0xFFE5E9F0))
-        BTTUNERank.Gold -> listOf(Color(0xFFFFD700), Color(0xFFFFA500))
-        BTTUNERank.Platinum -> listOf(Color(0xFFE5E9F0), Color(0xFFB0C4DE))
-        BTTUNERank.Diamond -> listOf(Color(0xFF00F2FE), Color(0xFF9B51E0))
-        BTTUNERank.Elite -> listOf(Color(0xFF8E2DE2), Color(0xFF4A00E0))
-        BTTUNERank.Master -> listOf(Color(0xFFFF007F), Color(0xFFFF5E62))
-        BTTUNERank.Legend -> listOf(Color(0xFFF12711), Color(0xFFF5AF19))
-        BTTUNERank.Mythic -> listOf(Color(0xFF0575E6), Color(0xFF00F260))
-        BTTUNERank.Immortal -> listOf(Color(0xFF1F1C2C), Color(0xFF928DAB))
-        BTTUNERank.Cosmic -> listOf(Color(0xFF1A1A2E), Color(0xFFE94560))
-        BTTUNERank.Nova -> listOf(Color(0xFFFF416C), Color(0xFFFF4B2B))
-        BTTUNERank.Celestial -> listOf(Color(0xFF7F00FF), Color(0xFFE100FF))
-        BTTUNERank.Godlike -> listOf(Color(0xFFFF007F), Color(0xFFFFD700), Color(0xFF00F2FE))
-        BTTUNERank.Universal -> listOf(Color(0xFF00C6FF), Color(0xFF0072FF))
-        BTTUNERank.Eternal -> listOf(Color(0xFF8A2387), Color(0xFFE94057), Color(0xFFF27121))
+        AirBeatsRank.Echo -> listOf(Color(0xFF00F2FE), Color(0xFF4FACFE))
+        AirBeatsRank.Pulse -> listOf(Color(0xFF00FF87), Color(0xFF60EFFF))
+        AirBeatsRank.Bronze -> listOf(Color(0xFFCA7345), Color(0xFFEAA17C))
+        AirBeatsRank.Silver -> listOf(Color(0xFFBDC3C7), Color(0xFFE5E9F0))
+        AirBeatsRank.Gold -> listOf(Color(0xFFFFD700), Color(0xFFFFA500))
+        AirBeatsRank.Platinum -> listOf(Color(0xFFE5E9F0), Color(0xFFB0C4DE))
+        AirBeatsRank.Diamond -> listOf(Color(0xFF00F2FE), Color(0xFF9B51E0))
+        AirBeatsRank.Elite -> listOf(Color(0xFF8E2DE2), Color(0xFF4A00E0))
+        AirBeatsRank.Master -> listOf(Color(0xFFFF007F), Color(0xFFFF5E62))
+        AirBeatsRank.Legend -> listOf(Color(0xFFF12711), Color(0xFFF5AF19))
+        AirBeatsRank.Mythic -> listOf(Color(0xFF0575E6), Color(0xFF00F260))
+        AirBeatsRank.Immortal -> listOf(Color(0xFF1F1C2C), Color(0xFF928DAB))
+        AirBeatsRank.Cosmic -> listOf(Color(0xFF1A1A2E), Color(0xFFE94560))
+        AirBeatsRank.Nova -> listOf(Color(0xFFFF416C), Color(0xFFFF4B2B))
+        AirBeatsRank.Celestial -> listOf(Color(0xFF7F00FF), Color(0xFFE100FF))
+        AirBeatsRank.Godlike -> listOf(Color(0xFFFF007F), Color(0xFFFFD700), Color(0xFF00F2FE))
+        AirBeatsRank.Universal -> listOf(Color(0xFF00C6FF), Color(0xFF0072FF))
+        AirBeatsRank.Eternal -> listOf(Color(0xFF8A2387), Color(0xFFE94057), Color(0xFFF27121))
     }
 
     val gradientBrush = Brush.linearGradient(colors)
@@ -99,10 +99,10 @@ fun RankBadge(
         Canvas(modifier = Modifier.fillMaxSize()) {
             val strokeWidth = if (size > 30.dp) 4f else 2f
             when (badge) {
-                BTTUNERank.Echo -> {
+                AirBeatsRank.Echo -> {
                     drawCircle(brush = gradientBrush, radius = this.size.minDimension / 4)
                 }
-                BTTUNERank.Pulse -> {
+                AirBeatsRank.Pulse -> {
                     val path = Path().apply {
                         moveTo(0f, this@Canvas.size.height / 2)
                         lineTo(this@Canvas.size.width * 0.3f, this@Canvas.size.height / 2)
@@ -113,7 +113,7 @@ fun RankBadge(
                     }
                     drawPath(path, brush = gradientBrush, style = Stroke(strokeWidth))
                 }
-                BTTUNERank.Bronze -> {
+                AirBeatsRank.Bronze -> {
                     val path = Path().apply {
                         val cx = this@Canvas.size.width / 2
                         val cy = this@Canvas.size.height / 2
@@ -128,7 +128,7 @@ fun RankBadge(
                     }
                     drawPath(path, brush = gradientBrush)
                 }
-                BTTUNERank.Silver -> {
+                AirBeatsRank.Silver -> {
                     val path = Path().apply {
                         val w1 = this@Canvas.size.width
                         val h1 = this@Canvas.size.height
@@ -141,7 +141,7 @@ fun RankBadge(
                     }
                     drawPath(path, brush = gradientBrush)
                 }
-                BTTUNERank.Gold -> {
+                AirBeatsRank.Gold -> {
                     val path = Path().apply {
                         val cx = this@Canvas.size.width / 2
                         val cy = this@Canvas.size.height / 2
@@ -158,7 +158,7 @@ fun RankBadge(
                     }
                     drawPath(path, brush = gradientBrush)
                 }
-                BTTUNERank.Platinum -> {
+                AirBeatsRank.Platinum -> {
                     val path = Path().apply {
                         val cx = this@Canvas.size.width / 2
                         val cy = this@Canvas.size.height / 2
@@ -173,7 +173,7 @@ fun RankBadge(
                     }
                     drawPath(path, brush = gradientBrush)
                 }
-                BTTUNERank.Diamond -> {
+                AirBeatsRank.Diamond -> {
                     val path = Path().apply {
                         val cx = this@Canvas.size.width / 2
                         val cy = this@Canvas.size.height / 2
@@ -187,7 +187,7 @@ fun RankBadge(
                     }
                     drawPath(path, brush = gradientBrush)
                 }
-                BTTUNERank.Elite -> {
+                AirBeatsRank.Elite -> {
                     val path = Path().apply {
                         val w1 = this@Canvas.size.width
                         val h1 = this@Canvas.size.height
@@ -202,11 +202,11 @@ fun RankBadge(
                     }
                     drawPath(path, brush = gradientBrush)
                 }
-                BTTUNERank.Master -> {
+                AirBeatsRank.Master -> {
                     drawCircle(brush = gradientBrush, radius = this.size.minDimension / 2.5f, style = Stroke(strokeWidth))
                     drawCircle(brush = gradientBrush, radius = this.size.minDimension / 4.8f)
                 }
-                BTTUNERank.Legend -> {
+                AirBeatsRank.Legend -> {
                     drawCircle(brush = gradientBrush, radius = this.size.minDimension / 3f)
                     val starPath = Path().apply {
                         val cx = this@Canvas.size.width / 2
@@ -224,7 +224,7 @@ fun RankBadge(
                     }
                     drawPath(starPath, brush = Brush.linearGradient(listOf(Color.White, Color.Transparent)))
                 }
-                BTTUNERank.Mythic -> {
+                AirBeatsRank.Mythic -> {
                     val path = Path().apply {
                         val w1 = this@Canvas.size.width
                         val h1 = this@Canvas.size.height
@@ -236,7 +236,7 @@ fun RankBadge(
                     }
                     drawPath(path, brush = gradientBrush, style = Stroke(strokeWidth * 1.5f))
                 }
-                BTTUNERank.Immortal -> {
+                AirBeatsRank.Immortal -> {
                     val path = Path().apply {
                         val cx = this@Canvas.size.width / 2
                         val cy = this@Canvas.size.height / 2
@@ -250,11 +250,11 @@ fun RankBadge(
                     drawPath(path, brush = gradientBrush)
                     drawLine(color = Color.White.copy(alpha = 0.6f), start = Offset(this.size.width / 2, this.size.height * 0.2f), end = Offset(this.size.width / 2, this.size.height * 0.8f), strokeWidth = strokeWidth)
                 }
-                BTTUNERank.Cosmic -> {
+                AirBeatsRank.Cosmic -> {
                     drawCircle(brush = gradientBrush, radius = this.size.minDimension / 3f)
                     drawCircle(brush = gradientBrush, radius = this.size.minDimension / 1.8f, style = Stroke(strokeWidth / 1.5f))
                 }
-                BTTUNERank.Nova -> {
+                AirBeatsRank.Nova -> {
                     for (i in 0 until 8) {
                         val angle = (i * Math.PI / 4).toFloat()
                         val dx = (Math.cos(angle.toDouble()) * this@Canvas.size.width / 2.2).toFloat()
@@ -263,7 +263,7 @@ fun RankBadge(
                     }
                     drawCircle(color = Color.White, radius = this.size.minDimension / 5f)
                 }
-                BTTUNERank.Celestial -> {
+                AirBeatsRank.Celestial -> {
                     drawCircle(brush = gradientBrush, radius = this.size.minDimension / 2.6f, style = Stroke(strokeWidth))
                     val path = Path().apply {
                         val cx = this@Canvas.size.width / 2
@@ -278,7 +278,7 @@ fun RankBadge(
                     }
                     drawPath(path, brush = gradientBrush)
                 }
-                BTTUNERank.Godlike -> {
+                AirBeatsRank.Godlike -> {
                     drawCircle(brush = gradientBrush, radius = this.size.minDimension / 2.4f, style = Stroke(strokeWidth * 1.5f))
                     val path = Path().apply {
                         val cx = this@Canvas.size.width / 2
@@ -294,12 +294,12 @@ fun RankBadge(
                     }
                     drawPath(path, brush = gradientBrush)
                 }
-                BTTUNERank.Universal -> {
+                AirBeatsRank.Universal -> {
                     drawCircle(brush = gradientBrush, radius = this.size.minDimension / 2.2f, style = Stroke(strokeWidth))
                     drawCircle(brush = gradientBrush, radius = this.size.minDimension / 3.2f, style = Stroke(strokeWidth * 0.8f))
                     drawCircle(brush = gradientBrush, radius = this.size.minDimension / 5.2f)
                 }
-                BTTUNERank.Eternal -> {
+                AirBeatsRank.Eternal -> {
                     drawCircle(brush = gradientBrush, radius = this.size.minDimension / 2.1f, style = Stroke(strokeWidth * 1.6f))
                     val path = Path().apply {
                         val w1 = this@Canvas.size.width
@@ -322,7 +322,7 @@ fun RankBadge(
  */
 @Composable
 fun RankUpPopup(
-    newRank: BTTUNERank,
+    newRank: AirBeatsRank,
     onDismiss: () -> Unit,
 ) {
     var visible by remember { mutableStateOf(true) }
@@ -603,7 +603,7 @@ fun RankBadgeSelector(
             verticalArrangement = Arrangement.spacedBy(8.dp),
             maxItemsInEachRow = 3
         ) {
-            BTTUNERank.values().forEach { rank ->
+            AirBeatsRank.values().forEach { rank ->
                 val isUnlocked = unlockedRanks.contains(rank)
                 val isSelected = displayedRank == rank
 
@@ -693,9 +693,9 @@ fun RankBadgeSelector(
  */
 @Composable
 fun BadgeSelector(
-    unlockedRanks: List<BTTUNERank>,
-    currentDisplayed: BTTUNERank?,
-    onSelect: (BTTUNERank?) -> Unit,
+    unlockedRanks: List<AirBeatsRank>,
+    currentDisplayed: AirBeatsRank?,
+    onSelect: (AirBeatsRank?) -> Unit,
     onDismiss: () -> Unit,
 ) {
     AlertDialog(
@@ -731,6 +731,6 @@ fun BadgeSelector(
     )
 }
 
-fun unlockedRanksFromHours(hours: Double): List<BTTUNERank> {
-    return BTTUNERank.values().filter { hours >= it.thresholdHours }
+fun unlockedRanksFromHours(hours: Double): List<AirBeatsRank> {
+    return AirBeatsRank.values().filter { hours >= it.thresholdHours }
 }

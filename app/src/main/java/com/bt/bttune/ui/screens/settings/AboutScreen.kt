@@ -12,6 +12,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.TopAppBarScrollBehavior
 import androidx.compose.runtime.*
@@ -48,6 +50,9 @@ import com.bt.bttune.LocalPlayerAwareWindowInsets
 import com.bt.bttune.LocalPlayerConnection
 import com.bt.bttune.R
 import com.bt.bttune.ui.component.IconButton
+import com.bt.bttune.ui.component.isFrostedGlassUiEnabled
+import com.bt.bttune.ui.component.settingsCardContainerColor
+import com.bt.bttune.ui.component.settingsCardBorder
 
 // ==================== SHIMMER EFFECT ====================
 
@@ -83,19 +88,28 @@ fun SocialIconBadge(
     iconRes: Int,
     onClick: () -> Unit
 ) {
+    val isFrosted = isFrostedGlassUiEnabled()
     Box(
         modifier = Modifier
             .size(32.dp)
             .clip(CircleShape)
-            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.1f))
-            .border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.25f), CircleShape)
+            .background(
+                if (isFrosted) Color.White.copy(alpha = 0.08f)
+                else MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)
+            )
+            .border(
+                1.dp,
+                if (isFrosted) Color.White.copy(alpha = 0.15f)
+                else MaterialTheme.colorScheme.primary.copy(alpha = 0.25f),
+                CircleShape
+            )
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
         Icon(
             painter = painterResource(id = iconRes),
             contentDescription = null,
-            tint = MaterialTheme.colorScheme.primary,
+            tint = if (isFrosted) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.primary,
             modifier = Modifier.size(16.dp)
         )
     }
@@ -106,6 +120,7 @@ fun UserCard(
     imageUrl: String,
     name: String,
     role: String,
+    commits: Int? = null,
     githubUrl: String? = null,
     telegramUrl: String? = null,
     instagramUrl: String? = null,
@@ -114,6 +129,7 @@ fun UserCard(
     onClick: () -> Unit
 ) {
     var isPressed by remember { mutableStateOf(false) }
+    val isFrosted = isFrostedGlassUiEnabled()
 
     val borderBrush = Brush.linearGradient(
         colors = listOf(
@@ -123,21 +139,28 @@ fun UserCard(
         )
     )
 
+    val cardBorder = if (isFrosted) {
+        settingsCardBorder(true) ?: androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.12f))
+    } else {
+        androidx.compose.foundation.BorderStroke(1.dp, borderBrush)
+    }
+
     Card(
         modifier = modifier
             .padding(horizontal = 6.dp, vertical = 8.dp)
             .height(240.dp)
             .scale(if (isPressed) 0.98f else 1f)
-            .shadow(
-                elevation = 16.dp,
-                shape = RoundedCornerShape(24.dp),
-                ambientColor = MaterialTheme.colorScheme.primary,
-                spotColor = MaterialTheme.colorScheme.primary
-            )
-            .border(
-                width = 1.dp,
-                brush = borderBrush,
-                shape = RoundedCornerShape(24.dp)
+            .then(
+                if (isFrosted) {
+                    Modifier
+                } else {
+                    Modifier.shadow(
+                        elevation = 16.dp,
+                        shape = RoundedCornerShape(24.dp),
+                        ambientColor = MaterialTheme.colorScheme.primary,
+                        spotColor = MaterialTheme.colorScheme.primary
+                    )
+                }
             )
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
@@ -148,8 +171,9 @@ fun UserCard(
                 isPressed = false
             },
         shape = RoundedCornerShape(24.dp),
+        border = cardBorder,
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainer,
+            containerColor = if (isFrosted) settingsCardContainerColor(true) else MaterialTheme.colorScheme.surfaceContainer,
         )
     ) {
         Column(
@@ -168,14 +192,29 @@ fun UserCard(
                         .size(76.dp)
                         .clip(CircleShape)
                         .background(
-                            Brush.radialGradient(
-                                colors = listOf(
-                                    MaterialTheme.colorScheme.primary.copy(alpha = 0.2f),
-                                    MaterialTheme.colorScheme.primary.copy(alpha = 0.05f)
+                            if (isFrosted) {
+                                Brush.radialGradient(
+                                    colors = listOf(
+                                        Color.White.copy(alpha = 0.12f),
+                                        Color.White.copy(alpha = 0.04f)
+                                    )
                                 )
-                            )
+                            } else {
+                                Brush.radialGradient(
+                                    colors = listOf(
+                                        MaterialTheme.colorScheme.primary.copy(alpha = 0.2f),
+                                        MaterialTheme.colorScheme.primary.copy(alpha = 0.05f)
+                                    )
+                                )
+                            }
                         )
-                        .border(1.5.dp, borderBrush, CircleShape)
+                        .then(
+                            if (isFrosted) {
+                                Modifier.border(1.dp, Color.White.copy(alpha = 0.18f), CircleShape)
+                            } else {
+                                Modifier.border(1.5.dp, borderBrush, CircleShape)
+                            }
+                        )
                 ) {
                     AsyncImage(
                         model = ImageRequest.Builder(LocalContext.current)
@@ -204,7 +243,8 @@ fun UserCard(
 
                 Surface(
                     shape = RoundedCornerShape(50),
-                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
+                    color = if (isFrosted) Color.White.copy(alpha = 0.08f) else MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
+                    border = if (isFrosted) androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.12f)) else null
                 ) {
                     Text(
                         text = role,
@@ -213,9 +253,29 @@ fun UserCard(
                             vertical = 4.dp
                         ),
                         style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.primary,
+                        color = if (isFrosted) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.primary,
                         fontWeight = FontWeight.Bold
                     )
+                }
+
+                if (commits != null) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Surface(
+                        shape = RoundedCornerShape(50),
+                        color = if (isFrosted) Color.White.copy(alpha = 0.08f) else MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
+                        border = if (isFrosted) androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.12f)) else null
+                    ) {
+                        Text(
+                            text = "$commits Commits",
+                            modifier = Modifier.padding(
+                                horizontal = 10.dp,
+                                vertical = 4.dp
+                            ),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (isFrosted) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
                 }
             }
 
@@ -264,6 +324,7 @@ fun UserCard(
 
 @Composable
 fun SocialIconRow(uriHandler: UriHandler) {
+    val isFrosted = isFrostedGlassUiEnabled()
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -272,15 +333,16 @@ fun SocialIconRow(uriHandler: UriHandler) {
             .shadow(4.dp, RoundedCornerShape(28.dp)),
         shape = RoundedCornerShape(28.dp),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.8f)
-        )
+            containerColor = settingsCardContainerColor(isFrosted)
+        ),
+        border = settingsCardBorder(isFrosted)
     ) {
         Row(
             modifier = Modifier
-                .padding(horizontal = 16.dp, vertical = 12.dp)
-                .fillMaxWidth(),
-            horizontalArrangement = Arrangement.Center,
-            verticalAlignment = Alignment.CenterVertically
+                .fillMaxWidth()
+                .padding(vertical = 12.dp, horizontal = 16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Center
         ) {
             Icon(
                 modifier = Modifier.size(24.dp),
@@ -301,7 +363,7 @@ fun SocialIconRow(uriHandler: UriHandler) {
 
 // ==================== MAIN ABOUT SCREEN ====================
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun AboutScreen(
     navController: NavController,
@@ -311,6 +373,7 @@ fun AboutScreen(
     val context = LocalContext.current
     val shimmerBrush = shimmerEffect()
     var logoTapCount by remember { mutableIntStateOf(0) }
+    var versionTapCount by remember { mutableIntStateOf(0) }
 
     val infiniteTransition = rememberInfiniteTransition(label = "")
     val logoScale by infiniteTransition.animateFloat(
@@ -329,41 +392,11 @@ fun AboutScreen(
         ?: remember { mutableStateOf(null) }
 
     Box(modifier = Modifier.fillMaxSize()) {
-        // 🎵 BLUR BACKGROUND
+        // Adaptive background: blurred song thumbnail when playing, Library mesh when no song playing
         val artworkUrl = mediaMetadata?.thumbnailUrl
-
-        artworkUrl?.let { imageUrl ->
-            com.bt.bttune.ui.component.BlurredBackground(
-                model = imageUrl
-            )
-
-            val isDarkTheme =
-                MaterialTheme.colorScheme.background.luminance() < 0.5f
-
-            val overlayBrush = if (isDarkTheme) {
-                Brush.verticalGradient(
-                    listOf(
-                        Color.Black.copy(alpha = 0.2f),
-                        Color.Black.copy(alpha = 0.5f),
-                        Color.Black.copy(alpha = 0.85f)
-                    )
-                )
-            } else {
-                Brush.verticalGradient(
-                    listOf(
-                        MaterialTheme.colorScheme.surface.copy(alpha = 0.25f),
-                        MaterialTheme.colorScheme.surface.copy(alpha = 0.5f),
-                        MaterialTheme.colorScheme.background.copy(alpha = 0.85f)
-                    )
-                )
-            }
-
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(overlayBrush)
-            )
-        }
+        com.bt.bttune.ui.component.ScreenAdaptiveBackground(
+            artworkUrl = artworkUrl
+        )
 
         // Main Scaffold with new TopAppBar
         Scaffold(
@@ -513,6 +546,25 @@ fun AboutScreen(
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.secondary,
                             modifier = Modifier
+                                .clip(CircleShape)
+                                .clickable {
+                                    versionTapCount++
+                                    if (versionTapCount in 1..4) {
+                                        android.widget.Toast.makeText(
+                                            context,
+                                            "Tap ${5 - versionTapCount} more times to trigger test crash",
+                                            android.widget.Toast.LENGTH_SHORT
+                                        ).show()
+                                    } else if (versionTapCount >= 5) {
+                                        versionTapCount = 0
+                                        android.widget.Toast.makeText(
+                                            context,
+                                            "Triggering test crash...",
+                                            android.widget.Toast.LENGTH_SHORT
+                                        ).show()
+                                        throw RuntimeException("BTTUNE Test Crash for Telegram Topic 224")
+                                    }
+                                }
                                 .border(
                                     width = 1.dp,
                                     color = MaterialTheme.colorScheme.secondary,
@@ -520,6 +572,22 @@ fun AboutScreen(
                                 )
                                 .padding(horizontal = 8.dp, vertical = 2.dp)
                         )
+
+                        if (BuildConfig.BUILD_TYPE == "nightly") {
+                            Spacer(Modifier.width(4.dp))
+                            Text(
+                                text = "NIGHTLY",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.secondary,
+                                modifier = Modifier
+                                    .border(
+                                        color = MaterialTheme.colorScheme.secondary,
+                                        width = 1.dp,
+                                        shape = CircleShape
+                                    )
+                                    .padding(horizontal = 8.dp, vertical = 2.dp)
+                            )
+                        }
 
                         if (BuildConfig.DEBUG) {
                             Spacer(Modifier.width(4.dp))
@@ -548,7 +616,7 @@ fun AboutScreen(
                         modifier = Modifier.padding(bottom = 8.dp)
                     )
 
-                    // Social Icons (Contact Telegram)
+                    // Social Icons
                     SocialIconRow(uriHandler)
 
                     Spacer(Modifier.height(16.dp))
@@ -575,7 +643,7 @@ fun AboutScreen(
                         )
                     }
 
-                    // Developers Cards (2 Developers Only: AF CRIS and Tishan Tanti)
+                    // Developers Cards - SIDE-BY-SIDE VERTICAL CARDS
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -586,15 +654,17 @@ fun AboutScreen(
                             imageUrl = "https://avatars.githubusercontent.com/u/301598560",
                             name = "AF CRIS",
                             role = "Lead Developer",
+                            githubUrl = "https://github.com/batz-dev",
                             telegramUrl = "https://t.me/freek311",
                             modifier = Modifier.weight(1f),
                             onClick = { uriHandler.openUri("https://t.me/freek311") }
                         )
-                        Spacer(Modifier.width(8.dp))
+
                         UserCard(
                             imageUrl = "https://avatars.githubusercontent.com/u/301598560",
                             name = "Tishan Tanti",
                             role = "Developer",
+                            commits = null,
                             telegramUrl = "https://t.me/freek311",
                             modifier = Modifier.weight(1f),
                             onClick = { uriHandler.openUri("https://t.me/freek311") }
@@ -606,3 +676,32 @@ fun AboutScreen(
         }
     }
 }
+
+
+
+
+
+
+
+
+
+
+
+
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@androidx.compose.ui.tooling.preview.Preview(showBackground = true)
+@Composable
+fun AboutScreenPreview() {
+    com.bt.bttune.ui.theme.BTTUNETheme {
+        androidx.compose.runtime.CompositionLocalProvider(
+            com.bt.bttune.LocalPlayerAwareWindowInsets provides androidx.compose.foundation.layout.WindowInsets(0, 0, 0, 0)
+        ) {
+            val scrollBehavior = androidx.compose.material3.TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
+            AboutScreen(
+                navController = androidx.navigation.compose.rememberNavController(),
+                scrollBehavior = scrollBehavior
+            )
+        }
+    }
+}
+

@@ -22,23 +22,23 @@ class RankPreferenceManager @Inject constructor(
     }
 
     /** The badge the user chose to display (null = auto = real rank). */
-    val displayedRank: Flow<BTTUNERank?> = context.rankDataStore.data.map { prefs ->
-        prefs[DISPLAYED_RANK_KEY]?.let { runCatching { BTTUNERank.valueOf(it) }.getOrNull() }
+    val displayedRank: Flow<AirBeatsRank?> = context.rankDataStore.data.map { prefs ->
+        prefs[DISPLAYED_RANK_KEY]?.let { runCatching { AirBeatsRank.valueOf(it) }.getOrNull() }
     }
 
     /** The highest rank the user has been notified about (used for rank-up popup). */
-    val lastSeenRank: Flow<BTTUNERank?> = context.rankDataStore.data.map { prefs ->
-        prefs[LAST_SEEN_RANK_KEY]?.let { runCatching { BTTUNERank.valueOf(it) }.getOrNull() }
+    val lastSeenRank: Flow<AirBeatsRank?> = context.rankDataStore.data.map { prefs ->
+        prefs[LAST_SEEN_RANK_KEY]?.let { runCatching { AirBeatsRank.valueOf(it) }.getOrNull() }
     }
 
-    suspend fun saveDisplayedRank(rank: BTTUNERank?) {
+    suspend fun saveDisplayedRank(rank: AirBeatsRank?) {
         context.rankDataStore.edit { prefs ->
             if (rank != null) prefs[DISPLAYED_RANK_KEY] = rank.name
             else prefs.remove(DISPLAYED_RANK_KEY)
         }
     }
 
-    suspend fun saveLastSeenRank(rank: BTTUNERank) {
+    suspend fun saveLastSeenRank(rank: AirBeatsRank) {
         context.rankDataStore.edit { prefs ->
             prefs[LAST_SEEN_RANK_KEY] = rank.name
         }

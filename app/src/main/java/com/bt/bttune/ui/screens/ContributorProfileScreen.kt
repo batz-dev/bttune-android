@@ -71,7 +71,7 @@ fun ContributorProfileScreen(
         launch { profile = client.getUserProfile(username) }
         launch { repos = client.getUserRepos(username) }
         launch { events = client.getUserEvents(username) }
-        launch { commits = client.getRepoCommits("batz-dev", "bttune-android", username) }
+        launch { commits = client.getRepoCommits("batz-dev", "AirBeats", username) }
         launch { readme = client.getProfileReadme(username) }
         isLoading = false
     }
@@ -167,10 +167,10 @@ fun ContributorProfileScreen(
                     }
                 }
 
-                // BTTUNE COMMITS
+                // AIRBEATS COMMITS
                 if (commits.isNotEmpty()) {
                     item {
-                        Text("BTTUNE Commits", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                        Text("AirBeats Commits", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                     }
                     items(commits.take(5)) { commitWrap ->
                         Card(

@@ -1,6 +1,5 @@
 /*
- * OpenTune Project Original (2026)
- * Arturo254 (github.com/Arturo254)
+ * AirBeats Project Original (2026)
  * Licensed Under GPL-3.0 | see git history for contributors
  */
 
@@ -89,8 +88,16 @@ object NewPipeUtils {
         NewPipe.init(NewPipeDownloaderImpl(YouTube.proxy))
     }
 
+    @Volatile private var cachedSignatureTimestamp: Pair<Long, Int>? = null
+
     fun getSignatureTimestamp(videoId: String): Result<Int> = runCatching {
-        YoutubeJavaScriptPlayerManager.getSignatureTimestamp(videoId)
+        val cached = cachedSignatureTimestamp
+        if (cached != null && System.currentTimeMillis() - cached.first < 6 * 3600 * 1000L) {
+            return@runCatching cached.second
+        }
+        val sts = YoutubeJavaScriptPlayerManager.getSignatureTimestamp(videoId)
+        cachedSignatureTimestamp = System.currentTimeMillis() to sts
+        sts
     }
 
     fun getStreamUrl(

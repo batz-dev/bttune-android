@@ -82,12 +82,14 @@ import com.bt.bttune.extensions.toMediaItem
 import com.bt.bttune.models.toMediaMetadata
 import com.bt.bttune.playback.ExoDownloadService
 import com.bt.bttune.playback.queues.YouTubeQueue
+import com.bt.bttune.ui.component.DownloadQualityDialog
 import com.bt.bttune.ui.component.ListDialog
 import com.bt.bttune.ui.component.LocalBottomSheetPageState
 import com.bt.bttune.ui.component.SongListItem
 import com.bt.bttune.ui.component.TextFieldDialog
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 @Composable
 fun SongMenu(
@@ -104,6 +106,7 @@ fun SongMenu(
     val playerConnection = LocalPlayerConnection.current ?: return
     val songState = database.song(originalSong.id).collectAsState(initial = originalSong)
     val song = songState.value ?: originalSong
+    val isExcluded by database.isRecommendationExcluded(originalSong.id).collectAsState(initial = false)
     val download by LocalDownloadUtil.current.getDownload(originalSong.id)
         .collectAsState(initial = null)
     val coroutineScope = rememberCoroutineScope()
@@ -121,20 +124,10 @@ fun SongMenu(
     ) { isGranted: Boolean ->
         if (isGranted) {
             Toast.makeText(context, savingToastMsg, Toast.LENGTH_SHORT).show()
-            coroutineScope.launch(Dispatchers.IO) {
-                com.bt.bttune.utils.SaveToStorageUtil
-                    .saveToMusicFolder(context, song.toMediaMetadata())
-                    .onSuccess {
-                        launch(Dispatchers.Main) {
-                            Toast.makeText(context, savedToastMsg, Toast.LENGTH_LONG).show()
-                        }
-                    }
-                    .onFailure { e ->
-                        launch(Dispatchers.Main) {
-                            Toast.makeText(context, "$failedToastMsg: ${e.message}", Toast.LENGTH_LONG).show()
-                        }
-                    }
-            }
+            com.bt.bttune.utils.SaveToStorageUtil.saveToMusicFolderAsync(
+                context = context,
+                mediaMetadata = song.toMediaMetadata(),
+            )
             onDismiss()
         } else {
             Toast.makeText(context, permReqMsg, Toast.LENGTH_LONG).show()
@@ -296,111 +289,6 @@ fun SongMenu(
 
     val bottomSheetPageState = LocalBottomSheetPageState.current
 
-    // Row for "Play next", "Add to playlist", and "Share" buttons with grid-like background
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(start = 24.dp, end = 24.dp, top = 8.dp, bottom = 8.dp),
-        horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp),
-    ) {
-        // Play next button
-        Column(
-            modifier = Modifier
-                .weight(1f)
-                .background(
-                    color = MaterialTheme.colorScheme.surfaceVariant,
-                    shape = RoundedCornerShape(8.dp)
-                )
-                .clip(RoundedCornerShape(8.dp))
-                .clickable {
-                    onDismiss()
-                    playerConnection.playNext(song.toMediaItem())
-                }
-                .padding(12.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            Icon(
-                painter = painterResource(R.drawable.playlist_play),
-                contentDescription = null,
-                modifier = Modifier.size(24.dp),
-            )
-            Text(
-                text = stringResource(R.string.play_next),
-                style = MaterialTheme.typography.labelMedium,
-                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                modifier = Modifier
-                    .basicMarquee()
-                    .padding(top = 4.dp),
-            )
-        }
-
-        // Add to playlist button
-        Column(
-            modifier = Modifier
-                .weight(1f)
-                .background(
-                    color = MaterialTheme.colorScheme.surfaceVariant,
-                    shape = RoundedCornerShape(8.dp)
-                )
-                .clip(RoundedCornerShape(8.dp))
-                .clickable {
-                    showChoosePlaylistDialog = true
-                }
-                .padding(12.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            Icon(
-                painter = painterResource(R.drawable.playlist_add),
-                contentDescription = null,
-                modifier = Modifier.size(24.dp),
-            )
-            Text(
-                text = stringResource(R.string.add_to_playlist),
-                style = MaterialTheme.typography.labelMedium,
-                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                modifier = Modifier
-                    .basicMarquee()
-                    .padding(top = 4.dp),
-            )
-        }
-
-        // Share button
-        Column(
-            modifier = Modifier
-                .weight(1f)
-                .background(
-                    color = MaterialTheme.colorScheme.surfaceVariant,
-                    shape = RoundedCornerShape(8.dp)
-                )
-                .clip(RoundedCornerShape(8.dp))
-                .clickable {
-                    onDismiss()
-                    val intent = Intent().apply {
-                        action = Intent.ACTION_SEND
-                        type = "text/plain"
-                        putExtra(Intent.EXTRA_TEXT, "https://play.bttune.app/song?id=${song.id}")
-                    }
-                    context.startActivity(Intent.createChooser(intent, null))
-                }
-                .padding(12.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            Icon(
-                painter = painterResource(R.drawable.share),
-                contentDescription = null,
-                modifier = Modifier.size(24.dp),
-            )
-            Text(
-                text = stringResource(R.string.share),
-                style = MaterialTheme.typography.labelMedium,
-                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                modifier = Modifier
-                    .basicMarquee()
-                    .padding(top = 4.dp),
-            )
-        }
-    }
-
     LazyColumn(
         contentPadding = PaddingValues(
             start = 8.dp,
@@ -409,6 +297,55 @@ fun SongMenu(
             bottom = 8.dp + WindowInsets.systemBars.asPaddingValues().calculateBottomPadding(),
         ),
     ) {
+        item {
+            ListItem(
+                headlineContent = { Text(text = stringResource(R.string.play_next)) },
+                leadingContent = {
+                    Icon(
+                        painter = painterResource(R.drawable.playlist_play),
+                        contentDescription = null,
+                    )
+                },
+                modifier = Modifier.clickable {
+                    onDismiss()
+                    playerConnection.playNext(song.toMediaItem())
+                }
+            )
+        }
+        item {
+            ListItem(
+                headlineContent = { Text(text = stringResource(R.string.add_to_playlist)) },
+                leadingContent = {
+                    Icon(
+                        painter = painterResource(R.drawable.playlist_add),
+                        contentDescription = null,
+                    )
+                },
+                modifier = Modifier.clickable {
+                    showChoosePlaylistDialog = true
+                }
+            )
+        }
+        item {
+            ListItem(
+                headlineContent = { Text(text = stringResource(R.string.share)) },
+                leadingContent = {
+                    Icon(
+                        painter = painterResource(R.drawable.share),
+                        contentDescription = null,
+                    )
+                },
+                modifier = Modifier.clickable {
+                    onDismiss()
+                    val intent = Intent().apply {
+                        action = Intent.ACTION_SEND
+                        type = "text/plain"
+                        putExtra(Intent.EXTRA_TEXT, com.bt.bttune.utils.RemoteConfigManager.getSongShareUrl(song.id))
+                    }
+                    context.startActivity(Intent.createChooser(intent, null))
+                }
+            )
+        }
         item {
             ListItem(
                 headlineContent = { Text(text = stringResource(R.string.start_radio)) },
@@ -581,6 +518,7 @@ fun SongMenu(
                 }
 
                 else -> {
+                    var showQualityDialog by remember { mutableStateOf(false) }
                     ListItem(
                         headlineContent = { Text(text = stringResource(R.string.download)) },
                         leadingContent = {
@@ -589,21 +527,28 @@ fun SongMenu(
                                 contentDescription = null,
                             )
                         },
-                        modifier = Modifier.clickable {
-                            val downloadRequest =
-                                DownloadRequest
-                                    .Builder(song.id, song.id.toUri())
-                                    .setCustomCacheKey(song.id)
-                                    .setData(song.song.title.toByteArray())
-                                    .build()
-                            DownloadService.sendAddDownload(
-                                context,
-                                ExoDownloadService::class.java,
-                                downloadRequest,
-                                false,
-                            )
-                        }
+                        modifier = Modifier.clickable { showQualityDialog = true }
                     )
+                    if (showQualityDialog) {
+                        DownloadQualityDialog(
+                            onDismiss = { showQualityDialog = false },
+                            onQualitySelected = {
+                                showQualityDialog = false
+                                val downloadRequest =
+                                    DownloadRequest
+                                        .Builder(song.id, song.id.toUri())
+                                        .setCustomCacheKey(song.id)
+                                        .setData(song.song.title.toByteArray())
+                                        .build()
+                                DownloadService.sendAddDownload(
+                                    context,
+                                    ExoDownloadService::class.java,
+                                    downloadRequest,
+                                    false,
+                                )
+                            },
+                        )
+                    }
                 }
             }
         }
@@ -628,20 +573,10 @@ fun SongMenu(
 
                     if (hasPermission) {
                         Toast.makeText(context, savingToastMsg, Toast.LENGTH_SHORT).show()
-                        coroutineScope.launch(Dispatchers.IO) {
-                            com.bt.bttune.utils.SaveToStorageUtil
-                                .saveToMusicFolder(context, song.toMediaMetadata())
-                                .onSuccess {
-                                    launch(Dispatchers.Main) {
-                                        Toast.makeText(context, savedToastMsg, Toast.LENGTH_LONG).show()
-                                    }
-                                }
-                                .onFailure { e ->
-                                    launch(Dispatchers.Main) {
-                                        Toast.makeText(context, "$failedToastMsg: ${e.message}", Toast.LENGTH_LONG).show()
-                                    }
-                                }
-                        }
+                        com.bt.bttune.utils.SaveToStorageUtil.saveToMusicFolderAsync(
+                            context = context,
+                            mediaMetadata = song.toMediaMetadata(),
+                        )
                         onDismiss()
                     } else {
                         permissionLauncher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
@@ -724,6 +659,52 @@ fun SongMenu(
                     bottomSheetPageState.show {
                         (song.id)
                     }
+                }
+            )
+        }
+        item {
+            ListItem(
+                headlineContent = {
+                    Text(
+                        text = stringResource(
+                            if (isExcluded) R.string.allow_recommendations
+                            else R.string.dont_recommend_again
+                        )
+                    )
+                },
+                leadingContent = {
+                    Icon(
+                        painter = painterResource(R.drawable.block),
+                        contentDescription = null,
+                    )
+                },
+                modifier = Modifier.clickable {
+                    val wasExcluded = isExcluded
+                    coroutineScope.launch(Dispatchers.IO) {
+                        if (wasExcluded) {
+                            database.removeRecommendationExclusion(song.id)
+                        } else {
+                            database.insert(
+                                com.bt.bttune.db.entities.RecommendationExclusionEntity(
+                                    songId = song.id,
+                                    title = song.song.title,
+                                    artist = song.artists.joinToString { it.name },
+                                    thumbnailUrl = song.song.thumbnailUrl
+                                )
+                            )
+                            withContext(Dispatchers.Main) {
+                                playerConnection.removeSongFromQueue(song.id)
+                            }
+                        }
+                    }
+                    if (!wasExcluded) {
+                        onDismiss()
+                    }
+                    Toast.makeText(
+                        context,
+                        if (wasExcluded) R.string.recommendation_restored else R.string.dont_recommend_applied,
+                        Toast.LENGTH_SHORT
+                    ).show()
                 }
             )
         }

@@ -74,6 +74,7 @@ import com.bt.bttune.utils.joinByBullet
 import com.bt.bttune.utils.makeTimeString
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.time.LocalDateTime
 
 @SuppressLint("MutableCollectionMutableState")
@@ -89,6 +90,7 @@ fun YouTubeSongMenu(
     val database = LocalDatabase.current
     val playerConnection = LocalPlayerConnection.current ?: return
     val librarySong by database.song(song.id).collectAsState(initial = null)
+    val isExcluded by database.isRecommendationExcluded(song.id).collectAsState(initial = false)
     val download by LocalDownloadUtil.current.getDownload(song.id).collectAsState(initial = null)
     val coroutineScope = rememberCoroutineScope()
     val artists =
@@ -118,20 +120,10 @@ fun YouTubeSongMenu(
     ) { isGranted: Boolean ->
         if (isGranted) {
             Toast.makeText(context, savingToastMsg, Toast.LENGTH_SHORT).show()
-            coroutineScope.launch(Dispatchers.IO) {
-                com.bt.bttune.utils.SaveToStorageUtil
-                    .saveToMusicFolder(context, song.toMediaMetadata())
-                    .onSuccess {
-                        launch(Dispatchers.Main) {
-                            Toast.makeText(context, savedToastMsg, Toast.LENGTH_LONG).show()
-                        }
-                    }
-                    .onFailure { e ->
-                        launch(Dispatchers.Main) {
-                            Toast.makeText(context, "$failedToastMsg: ${e.message}", Toast.LENGTH_LONG).show()
-                        }
-                    }
-            }
+            com.bt.bttune.utils.SaveToStorageUtil.saveToMusicFolderAsync(
+                context = context,
+                mediaMetadata = song.toMediaMetadata(),
+            )
             onDismiss()
         } else {
             Toast.makeText(context, permReqMsg, Toast.LENGTH_LONG).show()
@@ -334,20 +326,10 @@ fun YouTubeSongMenu(
 
             if (hasPermission) {
                 Toast.makeText(context, savingToastMsg, Toast.LENGTH_SHORT).show()
-                coroutineScope.launch(Dispatchers.IO) {
-                    com.bt.bttune.utils.SaveToStorageUtil
-                        .saveToMusicFolder(context, song.toMediaMetadata())
-                        .onSuccess {
-                            launch(Dispatchers.Main) {
-                                Toast.makeText(context, savedToastMsg, Toast.LENGTH_LONG).show()
-                            }
-                        }
-                        .onFailure { e ->
-                            launch(Dispatchers.Main) {
-                                Toast.makeText(context, "$failedToastMsg: ${e.message}", Toast.LENGTH_LONG).show()
-                            }
-                        }
-                }
+                com.bt.bttune.utils.SaveToStorageUtil.saveToMusicFolderAsync(
+                    context = context,
+                    mediaMetadata = song.toMediaMetadata(),
+                )
                 onDismiss()
             } else {
                 permissionLauncher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
@@ -407,6 +389,37 @@ fun YouTubeSongMenu(
                 }
             context.startActivity(Intent.createChooser(intent, null))
             onDismiss()
+        }
+        GridMenuItem(
+            icon = R.drawable.block,
+            title = if (isExcluded) R.string.allow_recommendations else R.string.dont_recommend_again,
+        ) {
+            val wasExcluded = isExcluded
+            coroutineScope.launch(Dispatchers.IO) {
+                if (wasExcluded) {
+                    database.removeRecommendationExclusion(song.id)
+                } else {
+                    database.insert(
+                        com.bt.bttune.db.entities.RecommendationExclusionEntity(
+                            songId = song.id,
+                            title = song.title,
+                            artist = song.artists.joinToString { it.name },
+                            thumbnailUrl = song.thumbnail
+                        )
+                    )
+                    withContext(Dispatchers.Main) {
+                        playerConnection.removeSongFromQueue(song.id)
+                    }
+                }
+            }
+            if (!wasExcluded) {
+                onDismiss()
+            }
+            Toast.makeText(
+                context,
+                if (wasExcluded) R.string.recommendation_restored else R.string.dont_recommend_applied,
+                Toast.LENGTH_SHORT
+            ).show()
         }
     }
 }

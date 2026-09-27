@@ -2,7 +2,7 @@ name: Build & Release BTTUNE APK
 
 on:
   push:
-    branches: [ "main", "master" ]
+    branches: [ "main", "master", "sync-*" ]
   workflow_dispatch:
 
 concurrency:

@@ -1,5 +1,5 @@
 /*
- * BTTUNE Project Original (2026)
+ * AirBeats Project Original (2026)
  * Licensed Under GPL-3.0 | see git history for contributors
  */
 
@@ -75,7 +75,7 @@ internal fun rememberArtworkPainter(thumbnailUrl: String?): Painter =
             .build()
     )
 
-/** Fila de marca BTTUNE — aparece en el pie de todos los layouts si showBranding=true */
+/** Fila de marca AirBeats — aparece en el pie de todos los layouts si showBranding=true */
 @Composable
 internal fun LyricsBrandingRow(
     secondaryColor: Color,

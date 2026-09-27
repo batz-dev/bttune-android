@@ -1,6 +1,5 @@
 /*
- * OpenTune Project Original (2026)
- * Arturo254 (github.com/Arturo254)
+ * AirBeats Project Original (2026)
  * Licensed Under GPL-3.0 | see git history for contributors
  */
 
@@ -21,3 +20,4 @@ data class Thumbnail(
 ) {
     val normalizedUrl: String get() = if (url.startsWith("//")) "https:$url" else url
 }
+

@@ -14,6 +14,7 @@ import androidx.media3.common.Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM
 import androidx.media3.common.Player.REPEAT_MODE_OFF
 import androidx.media3.common.Player.STATE_READY
 import androidx.media3.common.Timeline
+import androidx.media3.exoplayer.ExoPlayer
 import com.bt.bttune.MusicWidget.Companion.ACTION_STATE_CHANGED
 import com.bt.bttune.MusicWidget.Companion.ACTION_UPDATE_PROGRESS
 import com.bt.bttune.db.MusicDatabase
@@ -21,6 +22,7 @@ import com.bt.bttune.extensions.currentMetadata
 import com.bt.bttune.extensions.getCurrentQueueIndex
 import com.bt.bttune.extensions.getQueueWindows
 import com.bt.bttune.extensions.metadata
+import com.bt.bttune.extensions.toggleRepeatMode
 import com.bt.bttune.playback.MusicService.MusicBinder
 import com.bt.bttune.playback.queues.Queue
 import com.bt.bttune.utils.ListenTogetherSync
@@ -38,6 +40,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import timber.log.Timber
 import java.util.concurrent.atomic.AtomicBoolean
@@ -70,9 +73,17 @@ class PlayerConnection(
     private val _playWhenReady = MutableStateFlow(player.playWhenReady)
     val playWhenReady: StateFlow<Boolean> = _playWhenReady.asStateFlow()
 
+    // Google Cast states exposed from MusicService
+    val isCasting = service.isCasting
+    val castDeviceName = service.castDeviceName
+
     // Estado combinado de reproducción
-    val isPlaying = combine(playbackState, playWhenReady) { playbackState, playWhenReady ->
-        playWhenReady && (playbackState == STATE_READY || playbackState == Player.STATE_BUFFERING)
+    val isPlaying = combine(playbackState, playWhenReady, service.isCasting, service.isCastPlaying) { playbackState, playWhenReady, isCasting, isCastPlaying ->
+        if (isCasting) {
+            isCastPlaying
+        } else {
+            playWhenReady && (playbackState == STATE_READY || playbackState == Player.STATE_BUFFERING)
+        }
     }.stateIn(
         scope,
         SharingStarted.Lazily,
@@ -169,6 +180,17 @@ class PlayerConnection(
     private var lastMediaItemIndex: Int = player.currentMediaItemIndex
     private var lastPosition: Long = 0L
 
+    private val widgetPlayerListener = object : Player.Listener {
+        override fun onEvents(player: Player, events: Player.Events) {
+            handlePlayerEvents(player, events)
+        }
+
+        override fun onPlaybackStateChanged(playbackState: Int) {
+            Log.d(TAG, "Playback state changed to: $playbackState")
+            updateConnectionState(playbackState)
+        }
+    }
+
     init {
         Log.d(TAG, "Initializing PlayerConnection")
 
@@ -180,19 +202,11 @@ class PlayerConnection(
         instance = this
 
         // Listener adicional para actualizaciones del widget
-        player.addListener(object : Player.Listener {
-            override fun onEvents(player: Player, events: Player.Events) {
-                handlePlayerEvents(player, events)
-            }
-
-            override fun onPlaybackStateChanged(playbackState: Int) {
-                Log.d(TAG, "Playback state changed to: $playbackState")
-                updateConnectionState(playbackState)
-            }
-        })
+        player.addListener(widgetPlayerListener)
 
         Log.d(TAG, "PlayerConnection initialized successfully")
     }
+
 
     private fun initializeStates() {
         try {
@@ -307,9 +321,10 @@ class PlayerConnection(
 
     private fun updateProgressStates() {
         try {
-            val currentPos = player.currentPosition
-            val totalDuration = player.duration
-            val buffered = player.bufferedPosition
+            val isCasting = service.isCasting.value
+            val currentPos = if (isCasting) service.castPositionMs.value else player.currentPosition
+            val totalDuration = if (isCasting && service.castDurationMs.value > 0) service.castDurationMs.value else player.duration
+            val buffered = if (isCasting) totalDuration else player.bufferedPosition
 
             // Solo actualizar si hay cambios significativos
             if (kotlin.math.abs(currentPos - lastPosition) > 500L ||
@@ -371,6 +386,15 @@ class PlayerConnection(
         }
     }
 
+    fun removeSongFromQueue(songId: String) {
+        try {
+            service.removeSongFromQueue(songId)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error removing song from queue: $songId", e)
+            reportException(e)
+        }
+    }
+
     fun toggleLike() {
         try {
             Timber.tag(TAG).d("Toggling like for current track. Current state: ${_isLiked.value}")
@@ -403,6 +427,21 @@ class PlayerConnection(
                 player.seekToNext()
                 player.prepare()
                 player.playWhenReady = true
+            } else if (player.mediaItemCount > 0) {
+                if (player.repeatMode == Player.REPEAT_MODE_ALL || player.shuffleModeEnabled) {
+                    player.seekToDefaultPosition(0)
+                    player.prepare()
+                    player.playWhenReady = true
+                } else if (player.repeatMode == Player.REPEAT_MODE_ONE) {
+                    player.seekTo(0)
+                    player.prepare()
+                    player.playWhenReady = true
+                } else {
+                    val seedId = player.currentMediaItem?.mediaId
+                    if (!seedId.isNullOrBlank()) {
+                        service.extendInfiniteQueue(seedId, autoPlayIfEnded = true)
+                    }
+                }
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error seeking to next", e)
@@ -413,8 +452,20 @@ class PlayerConnection(
     fun seekToPrevious() {
         try {
             Log.d(TAG, "Seeking to previous track")
-            if (player.hasPreviousMediaItem() || player.currentPosition > 3000) {
-                player.seekToPrevious()
+            if (player.hasPreviousMediaItem() && player.currentPosition < 3000) {
+                player.seekToPreviousMediaItem()
+                player.prepare()
+                player.playWhenReady = true
+            } else if (player.currentPosition > 3000) {
+                player.seekTo(0)
+                player.prepare()
+                player.playWhenReady = true
+            } else if (player.repeatMode == Player.REPEAT_MODE_ALL && player.mediaItemCount > 0) {
+                player.seekToDefaultPosition(player.mediaItemCount - 1)
+                player.prepare()
+                player.playWhenReady = true
+            } else {
+                player.seekTo(0)
                 player.prepare()
                 player.playWhenReady = true
             }
@@ -426,6 +477,10 @@ class PlayerConnection(
 
     fun togglePlayPause() {
         try {
+            if (service.isCasting.value) {
+                service.toggleCastPlayPause()
+                return
+            }
             val newPlayWhenReady = !player.playWhenReady
             Log.d(TAG, "Toggling play/pause to: $newPlayWhenReady")
             player.playWhenReady = newPlayWhenReady
@@ -440,8 +495,20 @@ class PlayerConnection(
             val newShuffleMode = !player.shuffleModeEnabled
             Log.d(TAG, "Toggling shuffle to: $newShuffleMode")
             player.shuffleModeEnabled = newShuffleMode
+            _shuffleModeEnabled.value = newShuffleMode
         } catch (e: Exception) {
             Log.e(TAG, "Error toggling shuffle", e)
+            reportException(e)
+        }
+    }
+
+    fun toggleRepeatMode() {
+        try {
+            val newRepeatMode = player.toggleRepeatMode()
+            _repeatMode.value = newRepeatMode
+            Log.d(TAG, "Toggling repeat mode to: $newRepeatMode")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error toggling repeat mode", e)
             reportException(e)
         }
     }
@@ -453,8 +520,9 @@ class PlayerConnection(
             } else {
                 Player.REPEAT_MODE_ONE
             }
-            Log.d(TAG, "Toggling repeat mode to: $newRepeatMode")
+            Log.d(TAG, "Toggling replay mode to: $newRepeatMode")
             player.repeatMode = newRepeatMode
+            _repeatMode.value = newRepeatMode
         } catch (e: Exception) {
             Log.e(TAG, "Error toggling repeat mode", e)
             reportException(e)
@@ -464,6 +532,11 @@ class PlayerConnection(
     fun seekTo(positionMs: Long) {
         try {
             Log.d(TAG, "Seeking to position: ${positionMs}ms")
+            if (service.isCasting.value) {
+                service.seekCastTo(positionMs)
+                _currentPosition.value = positionMs
+                return
+            }
             player.seekTo(positionMs.coerceIn(0, player.duration))
         } catch (e: Exception) {
             Log.e(TAG, "Error seeking to position", e)

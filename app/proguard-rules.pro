@@ -12,9 +12,8 @@
 #   public *;
 #}
 
-# Uncomment this to preserve the line number information for
-# debugging stack traces.
-#-keepattributes SourceFile,LineNumberTable
+# Preserve line number information for debugging stack traces
+-keepattributes SourceFile,LineNumberTable
 
 # If you keep the line number information, uncomment this to
 # hide the original source file name.
@@ -71,31 +70,15 @@
 -keep class jdk.dynalink.** { *; }
 -dontwarn jdk.dynalink.**
 
-## Strip Logging in release builds
+## Logging (does not affect Timber)
 -assumenosideeffects class android.util.Log {
     public static boolean isLoggable(java.lang.String, int);
     public static int v(...);
     public static int d(...);
-    public static int i(...);
-    public static int w(...);
-}
-
--assumenosideeffects class timber.log.Timber {
-    public static void v(...);
-    public static void d(...);
-    public static void i(...);
-}
-
--assumenosideeffects class timber.log.Timber$Forest {
-    public void v(...);
-    public void d(...);
-    public void i(...);
-}
-
--assumenosideeffects class timber.log.Timber$Tree {
-    public void v(...);
-    public void d(...);
-    public void i(...);
+    ## Leave in release builds
+    #public static int i(...);
+    #public static int w(...);
+    #public static int e(...);
 }
 
 # Generated automatically by the Android Gradle plugin.
@@ -105,3 +88,17 @@
 -dontwarn java.beans.Introspector
 -dontwarn java.beans.PropertyDescriptor
 -dontwarn okhttp3.internal.Util
+
+# Keep Android framework org.json classes and prevent R8 renaming
+-keep class org.json.** { *; }
+-dontwarn org.json.**
+
+# Keep models loaded from remote Firebase endpoints
+-keep class com.bt.bttune.models.** { *; }
+
+# Keep native Shazam JNI bindings
+-keep class com.alexmercerind.audire.native.** { *; }
+-keepclasseswithmembernames class * {
+    native <methods>;
+}
+

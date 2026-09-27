@@ -1,5 +1,5 @@
 /*
- * BTTUNE Project Original (2026)
+ * AirBeats Project Original (2026)
  * Licensed Under GPL-3.0 | see git history for contributors
  */
 
@@ -31,6 +31,10 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
+import me.saket.squiggles.SquigglySlider
+import com.bt.bttune.ui.component.PlayerSliderTrack
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -39,6 +43,9 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
+import com.bt.bttune.ui.component.AudioPipelineDialog
+import com.bt.bttune.ui.component.AudioQualityTag
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -95,7 +102,7 @@ import com.bt.bttune.utils.makeTimeString
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun BTTUNELyricsScreen(
+fun AirBeatsLyricsScreen(
     mediaMetadata: MediaMetadata,
     navController: NavController,
     onBackClick: () -> Unit,
@@ -115,7 +122,14 @@ fun BTTUNELyricsScreen(
     val playerVolume = playerConnection.service.playerVolume.collectAsState()
     
     val currentLyrics by playerConnection.currentLyrics.collectAsState(initial = null)
-    val useLyricsV2 = true
+    val currentFormat by playerConnection.currentFormat.collectAsState(initial = null)
+    var showAudioPipelineDialog by rememberSaveable { mutableStateOf(false) }
+    val lyricsScreenStyle by rememberEnumPreference(
+        com.bt.bttune.constants.LyricsScreenStyleKey,
+        com.bt.bttune.constants.LyricsScreenStyle.LYRICS_2
+    )
+    val useLyricsV2 = lyricsScreenStyle == com.bt.bttune.constants.LyricsScreenStyle.LYRICS_2
+    val sliderStyle by rememberEnumPreference(SliderStyleKey, SliderStyle.SQUIGGLY)
 
     // Auto-fetch lyrics when no lyrics found (same logic as refetch)
     LaunchedEffect(mediaMetadata.id, currentLyrics) {
@@ -167,6 +181,14 @@ fun BTTUNELyricsScreen(
     }
 
     BackHandler(onBack = onBackClick)
+
+    if (showAudioPipelineDialog) {
+        AudioPipelineDialog(
+            currentFormat = currentFormat,
+            mediaMetadata = mediaMetadata,
+            onDismiss = { showAudioPipelineDialog = false }
+        )
+    }
 
     Box(modifier = modifier.fillMaxSize()) {
         Box(modifier = Modifier.fillMaxSize()) {
@@ -258,6 +280,7 @@ fun BTTUNELyricsScreen(
                                         LyricsMenu(
                                             lyricsProvider = { currentLyrics },
                                             mediaMetadataProvider = { mediaMetadata },
+                                            navController = navController,
                                             onDismiss = menuState::dismiss
                                         )
                                     }
@@ -316,12 +339,14 @@ fun BTTUNELyricsScreen(
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
                             // Slider
-                            androidx.compose.material3.Slider(
-                                value = (sliderPosition ?: position).toFloat(),
-                                valueRange = 0f..(if (duration == C.TIME_UNSET) 0f else duration.toFloat()),
-                                onValueChange = {
-                                    sliderPosition = it.toLong()
-                                },
+                            LyricsSlider(
+                                sliderStyle = sliderStyle,
+                                sliderPosition = sliderPosition,
+                                position = position,
+                                duration = duration,
+                                isPlaying = isPlaying,
+                                textBackgroundColor = textBackgroundColor,
+                                onValueChange = { sliderPosition = it },
                                 onValueChangeFinished = {
                                     sliderPosition?.let {
                                         player.seekTo(it)
@@ -329,10 +354,6 @@ fun BTTUNELyricsScreen(
                                     }
                                     sliderPosition = null
                                 },
-                                colors = androidx.compose.material3.SliderDefaults.colors(
-                                    activeTrackColor = textBackgroundColor,
-                                    thumbColor = textBackgroundColor
-                                ),
                                 modifier = Modifier.fillMaxWidth()
                             )
 
@@ -341,12 +362,19 @@ fun BTTUNELyricsScreen(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .padding(horizontal = 16.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text(
                                     text = makeTimeString(sliderPosition ?: position),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = textBackgroundColor.copy(alpha = 0.7f)
+                                )
+                                AudioQualityTag(
+                                    currentFormat = currentFormat,
+                                    mediaMetadata = mediaMetadata,
+                                    tint = textBackgroundColor,
+                                    onClick = { showAudioPipelineDialog = true }
                                 )
                                 Text(
                                     text = if (duration != C.TIME_UNSET) makeTimeString(duration) else "",
@@ -367,15 +395,14 @@ fun BTTUNELyricsScreen(
                             ) {
                                 // Repeat button
                                 IconButton(
-                                    onClick = { playerConnection.player.toggleRepeatMode() },
+                                    onClick = { playerConnection.toggleRepeatMode() },
                                     modifier = Modifier.size(40.dp)
                                 ) {
                                     Icon(
                                         painter = painterResource(
                                             when (repeatMode) {
-                                                Player.REPEAT_MODE_OFF, 
-                                                Player.REPEAT_MODE_ALL -> R.drawable.repeat
                                                 Player.REPEAT_MODE_ONE -> R.drawable.repeat_one
+                                                Player.REPEAT_MODE_ALL -> R.drawable.repeat_on
                                                 else -> R.drawable.repeat
                                             }
                                         ),
@@ -445,7 +472,7 @@ fun BTTUNELyricsScreen(
 
                                 // Shuffle button
                                 IconButton(
-                                    onClick = { playerConnection.player.shuffleModeEnabled = !shuffleModeEnabled },
+                                    onClick = { playerConnection.toggleShuffle() },
                                     modifier = Modifier.size(40.dp)
                                 ) {
                                     Icon(
@@ -569,6 +596,7 @@ fun BTTUNELyricsScreen(
                                         LyricsMenu(
                                             lyricsProvider = { currentLyrics },
                                             mediaMetadataProvider = { mediaMetadata },
+                                            navController = navController,
                                             onDismiss = menuState::dismiss
                                         )
                                     }
@@ -609,12 +637,14 @@ fun BTTUNELyricsScreen(
                             .fillMaxWidth()
                             .padding(horizontal = 48.dp, vertical = 16.dp)
                     ) {
-                        androidx.compose.material3.Slider(
-                            value = (sliderPosition ?: position).toFloat(),
-                            valueRange = 0f..(if (duration == C.TIME_UNSET) 0f else duration.toFloat()),
-                            onValueChange = {
-                                sliderPosition = it.toLong()
-                            },
+                        LyricsSlider(
+                            sliderStyle = sliderStyle,
+                            sliderPosition = sliderPosition,
+                            position = position,
+                            duration = duration,
+                            isPlaying = isPlaying,
+                            textBackgroundColor = textBackgroundColor,
+                            onValueChange = { sliderPosition = it },
                             onValueChangeFinished = {
                                 sliderPosition?.let {
                                     player.seekTo(it)
@@ -622,10 +652,6 @@ fun BTTUNELyricsScreen(
                                 }
                                 sliderPosition = null
                             },
-                            colors = androidx.compose.material3.SliderDefaults.colors(
-                                activeTrackColor = textBackgroundColor,
-                                thumbColor = textBackgroundColor
-                            ),
                             modifier = Modifier.fillMaxWidth()
                         )
 
@@ -634,12 +660,19 @@ fun BTTUNELyricsScreen(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(horizontal = 16.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
                                 text = makeTimeString(sliderPosition ?: position),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = textBackgroundColor.copy(alpha = 0.7f)
+                            )
+                            AudioQualityTag(
+                                currentFormat = currentFormat,
+                                mediaMetadata = mediaMetadata,
+                                tint = textBackgroundColor,
+                                onClick = { showAudioPipelineDialog = true }
                             )
                             Text(
                                 text = if (duration != C.TIME_UNSET) makeTimeString(duration) else "",
@@ -660,15 +693,14 @@ fun BTTUNELyricsScreen(
                         ) {
                             // Repeat button with clear state indication
                             IconButton(
-                                onClick = { playerConnection.player.toggleRepeatMode() },
+                                onClick = { playerConnection.toggleRepeatMode() },
                                 modifier = Modifier.size(40.dp)
                             ) {
                                 Icon(
                                     painter = painterResource(
                                         when (repeatMode) {
-                                            Player.REPEAT_MODE_OFF, 
-                                            Player.REPEAT_MODE_ALL -> R.drawable.repeat
                                             Player.REPEAT_MODE_ONE -> R.drawable.repeat_one
+                                            Player.REPEAT_MODE_ALL -> R.drawable.repeat_on
                                             else -> R.drawable.repeat
                                         }
                                     ),
@@ -740,7 +772,7 @@ fun BTTUNELyricsScreen(
 
                             // Shuffle button with clear state indication
                             IconButton(
-                                onClick = { playerConnection.player.shuffleModeEnabled = !shuffleModeEnabled },
+                                onClick = { playerConnection.toggleShuffle() },
                                 modifier = Modifier.size(40.dp)
                             ) {
                                 Icon(
@@ -797,6 +829,75 @@ fun BTTUNELyricsScreen(
                     }
                 }
             }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun LyricsSlider(
+    sliderStyle: SliderStyle,
+    sliderPosition: Long?,
+    position: Long,
+    duration: Long,
+    isPlaying: Boolean,
+    textBackgroundColor: Color,
+    onValueChange: (Long) -> Unit,
+    onValueChangeFinished: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val sliderColors = SliderDefaults.colors(
+        activeTrackColor = textBackgroundColor,
+        inactiveTrackColor = textBackgroundColor.copy(alpha = 0.3f),
+        thumbColor = textBackgroundColor
+    )
+    val sliderValue = (sliderPosition ?: position).toFloat()
+    val sliderRange = 0f..(if (duration == C.TIME_UNSET) 0f else duration.toFloat())
+
+    when (sliderStyle) {
+        SliderStyle.DEFAULT -> {
+            Slider(
+                value = sliderValue,
+                valueRange = sliderRange,
+                onValueChange = { onValueChange(it.toLong()) },
+                onValueChangeFinished = onValueChangeFinished,
+                colors = sliderColors,
+                modifier = modifier
+            )
+        }
+
+        SliderStyle.SQUIGGLY -> {
+            SquigglySlider(
+                value = sliderValue,
+                valueRange = sliderRange,
+                onValueChange = { onValueChange(it.toLong()) },
+                onValueChangeFinished = onValueChangeFinished,
+                colors = sliderColors,
+                modifier = modifier,
+                squigglesSpec = SquigglySlider.SquigglesSpec(
+                    amplitude = if (isPlaying) 2.dp else 0.dp,
+                    strokeWidth = 3.dp,
+                )
+            )
+        }
+
+        SliderStyle.SLIM -> {
+            Slider(
+                value = sliderValue,
+                valueRange = sliderRange,
+                onValueChange = { onValueChange(it.toLong()) },
+                onValueChangeFinished = onValueChangeFinished,
+                thumb = { Spacer(modifier = Modifier.size(0.dp)) },
+                track = { sliderState ->
+                    PlayerSliderTrack(
+                        sliderState = sliderState,
+                        colors = sliderColors,
+                        trackHeight = 6.dp
+                    )
+                },
+                colors = sliderColors,
+                modifier = modifier
+            )
         }
     }
 }

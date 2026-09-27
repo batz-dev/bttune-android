@@ -68,6 +68,11 @@ class DebugActivity : ComponentActivity() {
         val reportText = buildCrashReport(this, timestampText, stack)
         val deviceInfo = buildDeviceInfo(this)
 
+        // Automatically dispatch fatal crash report to Telegram Crash Topic via Worker when crash screen is shown
+        runCatching {
+            com.bt.bttune.utils.AirBeatsCrashReporter.sendCrashFromDebugScreen(stack)
+        }
+
         setContent {
             BTTUNETheme(
                 darkTheme = true
@@ -361,7 +366,7 @@ private fun buildCrashReport(
     }.getOrDefault("")
 
     val header = buildString {
-        appendLine("BTTUNE crash report")
+        appendLine("AirBeats crash report")
         if (timestampText.isNotBlank()) appendLine("Time: $timestampText")
         if (versionName.isNotBlank() || versionCode.isNotBlank()) {
             appendLine("App: $versionName ($versionCode)")
